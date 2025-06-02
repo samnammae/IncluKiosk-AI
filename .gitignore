@@ -2,3 +2,4 @@ coco.names
 *.pt
 *.cfg
 *.weights
+temp_env/
