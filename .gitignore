@@ -3,3 +3,4 @@ coco.names
 *.cfg
 *.weights
 temp_env/
+*.jar
