@@ -4,6 +4,8 @@ import asyncio
 import json
 import RPi.GPIO as GPIO
 import websockets
+import sys
+import traceback
 
 PIR_PIN = int(os.environ.get("PIR_PIN", "18"))      # BCM 번호 (물리 12)
 SLEEP_SEC = float(os.environ.get("PIR_SLEEP", "0.15"))
@@ -31,7 +33,7 @@ def _resolve_pull_mode():
         return None
 
 async def send_pir_off():
-    """서버에 'worker' 소스로 PIR_OFF 전송 (서버는 상태만 정리, 연결 유지)."""
+    """서버에 'worker' 소스로 PIR_OFF 전송 (서버는 프론트로 브로드캐스트)."""
     try:
         async with websockets.connect(SERVER_URI) as ws:
             await ws.send(json.dumps({"type": "PIR_OFF", "source": "worker"}))
@@ -47,15 +49,15 @@ async def main():
         flush=True
     )
 
-    # ===== GPIO 초기화 =====
-    GPIO.setmode(GPIO.BCM)
-    pull = _resolve_pull_mode()
-    if pull is None:
-        GPIO.setup(PIR_PIN, GPIO.IN)
-    else:
-        GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=pull)
-
     try:
+        # ===== GPIO 초기화 =====
+        GPIO.setmode(GPIO.BCM)
+        pull = _resolve_pull_mode()
+        if pull is None:
+            GPIO.setup(PIR_PIN, GPIO.IN)
+        else:
+            GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=pull)
+
         # 워밍업 대기
         if WARMUP_SEC > 0:
             await asyncio.sleep(WARMUP_SEC)
@@ -89,6 +91,9 @@ async def main():
 
             await asyncio.sleep(SLEEP_SEC)
 
+    except Exception as e:
+        print("[PIR] Worker exception:", e, flush=True)
+        traceback.print_exc(file=sys.stdout)
     finally:
         GPIO.cleanup()
         print("[PIR] Exit", flush=True)
