@@ -1,17 +1,17 @@
 import os
 import signal
 import asyncio
+import json
 import RPi.GPIO as GPIO
 import websockets
 
 PIR_PIN = int(os.environ.get("PIR_PIN", "18"))      # BCM 번호 (물리 12)
 SLEEP_SEC = float(os.environ.get("PIR_SLEEP", "0.15"))
 SERVER_URI = os.environ.get("SERVER_URI", "ws://localhost:8765")
-ACTIVE_HIGH = os.environ.get("ACTIVE_HIGH", "1") == "1"  # 감지=HIGH가 일반적
-WARMUP_SEC = float(os.environ.get("PIR_WARMUP", "2.0"))  # 전원 투입/시작 직후 안정 대기
-CONFIRM_COUNT = int(os.environ.get("PIR_CONFIRM_COUNT", "2"))  # 연속 확인 횟수(노이즈 억제)
-# PULL: "DOWN" | "UP" | "NONE"
-PULL_MODE = os.environ.get("PIR_PULL", "DOWN").upper()
+ACTIVE_HIGH = os.environ.get("ACTIVE_HIGH", "1") == "1"  # 감지=HIGH
+WARMUP_SEC = float(os.environ.get("PIR_WARMUP", "2.0"))  # 안정 대기
+CONFIRM_COUNT = int(os.environ.get("PIR_CONFIRM_COUNT", "2"))  # 연속 확인
+PULL_MODE = os.environ.get("PIR_PULL", "DOWN").upper()   # DOWN|UP|NONE
 
 _running = True
 
@@ -28,13 +28,14 @@ def _resolve_pull_mode():
     elif PULL_MODE == "UP":
         return GPIO.PUD_UP
     else:
-        return None  # 내부 풀업/풀다운 미적용
+        return None
 
 async def send_pir_off():
+    """서버에 'worker' 소스로 PIR_OFF 전송 (서버는 상태만 정리, 연결 유지)."""
     try:
         async with websockets.connect(SERVER_URI) as ws:
-            await ws.send("PIR_OFF")  # 필요 시 JSON으로 전송 가능
-        print(f"[PIR] Sent PIR_OFF to {SERVER_URI}", flush=True)
+            await ws.send(json.dumps({"type": "PIR_OFF", "source": "worker"}))
+        print(f"[PIR] Sent PIR_OFF(source=worker) to {SERVER_URI}", flush=True)
     except Exception as e:
         print(f"[PIR] Failed to send PIR_OFF: {e}", flush=True)
 
@@ -55,7 +56,7 @@ async def main():
         GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=pull)
 
     try:
-        # 워밍업 대기 (모듈 초기 HIGH/노이즈 억제)
+        # 워밍업 대기
         if WARMUP_SEC > 0:
             await asyncio.sleep(WARMUP_SEC)
 
@@ -65,7 +66,6 @@ async def main():
         while _running:
             val = GPIO.input(PIR_PIN)
 
-            # 상태 변화 로그(도배 방지)
             if val != last:
                 if (val == 1 and ACTIVE_HIGH) or (val == 0 and not ACTIVE_HIGH):
                     print("[PIR] Motion detected (edge/state change)", flush=True)
@@ -73,16 +73,15 @@ async def main():
                     print("[PIR] No motion", flush=True)
                 last = val
 
-            # 감지 조건 계산
+            # 감지 판단 + 디바운스
             motion_now = (val == 1) if ACTIVE_HIGH else (val == 0)
             if motion_now:
                 confirm += 1
-                # 아주 짧은 디바운스 간격
                 await asyncio.sleep(0.05)
             else:
                 confirm = 0
 
-            # 연속 확인 횟수 충족 시 감지 확정
+            # 확정 시 서버 통지 후 워커 종료 (서버는 계속 RUN)
             if confirm >= max(1, CONFIRM_COUNT):
                 print("[PIR] Motion confirmed → notify server and exit", flush=True)
                 await send_pir_off()
