@@ -1,263 +1,417 @@
+import argparse
+import asyncio
+import signal
+import sys
+import time
+import json
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import mediapipe as mp
 import pyautogui
 import numpy as np
-import time
+import websockets
 
-# pyautogui 설정
+# ===== 로깅 설정 =====
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - [EYE] - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# ===== 인자 파싱 =====
+parser = argparse.ArgumentParser()
+parser.add_argument("--mode", choices=["mode_select", "eye_only"], default="mode_select")
+parser.add_argument("--server", default="ws://localhost:8765")
+args = parser.parse_args()
+
+MODE = args.mode            # mode_select: 눈+주먹, eye_only: 눈만
+SERVER_URI = args.server
+
+# ===== 종료 관리 =====
+_running = True
+_loop = None
+
+def _handle_stop(signum, frame):
+    global _running
+    _running = False
+    logger.info(f"Signal {signum} received, stopping...")
+
+signal.signal(signal.SIGTERM, _handle_stop)
+signal.signal(signal.SIGINT, _handle_stop)
+
+# ===== pyautogui 설정 =====
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0
-screen_w, screen_h = pyautogui.size()
 
-# MediaPipe 초기화
+try:
+    screen_w, screen_h = pyautogui.size()
+    logger.info(f"화면 크기: {screen_w}x{screen_h}")
+except Exception as e:
+    logger.error(f"화면 크기 획득 실패: {e}")
+    screen_w, screen_h = 1920, 1080  # 기본값
+
+# ===== MediaPipe 초기화 =====
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5)
+hands = None
 
+if MODE == "mode_select":
+    try:
+        hands = mp_hands.Hands(
+            max_num_hands=2, 
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        logger.info("MediaPipe Hands 초기화 완료")
+    except Exception as e:
+        logger.error(f"MediaPipe Hands 초기화 실패: {e}")
+        hands = None
+
+# Face Mesh 초기화
 mp_face = mp.solutions.face_mesh
+face_mesh = None
+use_iris = False
 
-# 방법 1: 다른 초기화 방식 시도
 try:
     face_mesh = mp_face.FaceMesh(
         static_image_mode=False,
         max_num_faces=1,
-        refine_landmarks=True,  # 홍채 추적을 위해 필요
+        refine_landmarks=True,  # 홍채 추적
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     )
     use_iris = True
-    print("홍채 추적 모드로 초기화 성공")
+    logger.info("FaceMesh 초기화 완료 (iris 추적 지원)")
 except Exception as e:
-    print(f"홍채 추적 모드 실패: {e}")
-    # 대안: 기본 모드로 초기화하고 눈 코너로 홍채 위치 추정
-    face_mesh = mp_face.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=1,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    )
-    use_iris = False
-    print("기본 모드로 초기화, 눈 추정 방식 사용")
+    logger.warning(f"FaceMesh refine 실패: {e} -> fallback으로 재시도")
+    try:
+        face_mesh = mp_face.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        use_iris = False
+        logger.info("FaceMesh 초기화 완료 (기본 모드)")
+    except Exception as e:
+        logger.error(f"FaceMesh 초기화 완전 실패: {e}")
+        face_mesh = None
 
-# 홍채 및 눈 랜드마크 인덱스
+# ===== MediaPipe 랜드마크 상수 =====
 LEFT_IRIS = [474, 475, 476, 477]
 RIGHT_IRIS = [469, 470, 471, 472]
 
-# 기본 눈 랜드마크 (홍채가 안될 경우 사용)
-LEFT_EYE_CORNERS = [33, 133]  # 왼쪽 눈 양 끝
-LEFT_EYE_TOP_BOTTOM = [159, 145]  # 왼쪽 눈 위아래
-RIGHT_EYE_CORNERS = [362, 263]  # 오른쪽 눈 양 끝
-RIGHT_EYE_TOP_BOTTOM = [386, 374]  # 오른쪽 눈 위아래
+LEFT_EYE_CORNERS = [33, 133]
+LEFT_EYE_TOP_BOTTOM = [159, 145]
+RIGHT_EYE_CORNERS = [362, 263]
+RIGHT_EYE_TOP_BOTTOM = [386, 374]
 
-# 눈 깜빡임 감지를 위한 랜드마크 (EAR 계산용)
-LEFT_EYE_POINTS = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
-RIGHT_EYE_POINTS = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-
-# EAR 계산을 위한 주요 6개 포인트
-LEFT_EYE_MAIN = [33, 160, 158, 133, 153, 144]  # [left, top1, top2, right, bottom1, bottom2]
+LEFT_EYE_MAIN = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE_MAIN = [362, 385, 387, 263, 373, 380]
 
+# ===== 설정값 =====
+EAR_THRESHOLD = 0.25
+BLINK_FRAMES = 2
+DOUBLE_BLINK_TIME = 1.0
+PROCESSING_INTERVAL = 10  # N프레임마다 처리
+
+# ===== 상태 변수 =====
+blink_counter = 0
+total_blinks = 0
+blink_times = []
+last_click_time = 0
+frame_count = 0
+smoothing_factor = 0.3
+prev_x, prev_y = screen_w // 2, screen_h // 2
+
+# ===== 카메라 초기화 =====
+cap = None
+try:
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        raise Exception("카메라를 열 수 없습니다")
+    
+    # 카메라 설정
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    
+    # 카메라 테스트
+    ret, test_frame = cap.read()
+    if not ret or test_frame is None:
+        raise Exception("카메라에서 프레임을 읽을 수 없습니다")
+    
+    logger.info("카메라 초기화 완료")
+    
+except Exception as e:
+    logger.error(f"카메라 초기화 실패: {e}")
+    if cap:
+        cap.release()
+    cap = None
+
+logger.info(f"모드: {MODE}, 서버: {SERVER_URI}")
+logger.info("'q' 키를 눌러 종료")
+
+# ===== 도우미 함수 =====
 def calculate_ear(landmarks, eye_points, frame_w, frame_h):
-    """EAR(Eye Aspect Ratio) 계산"""
+    """Eye Aspect Ratio 계산"""
     try:
-        # 눈의 6개 주요 포인트 좌표 추출
         points = []
         for point_idx in eye_points:
             x = landmarks.landmark[point_idx].x * frame_w
             y = landmarks.landmark[point_idx].y * frame_h
             points.append([x, y])
         
-        # EAR 계산: (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
-        p1, p2, p3, p4, p5, p6 = points
+        if len(points) != 6:
+            return 0
         
-        # 수직 거리들
+        p1, p2, p3, p4, p5, p6 = points
         dist1 = np.linalg.norm(np.array(p2) - np.array(p6))
         dist2 = np.linalg.norm(np.array(p3) - np.array(p5))
-        
-        # 수평 거리
         dist3 = np.linalg.norm(np.array(p1) - np.array(p4))
         
         if dist3 == 0:
             return 0
-        
-        ear = (dist1 + dist2) / (2.0 * dist3)
-        return ear
-    except:
+        return (dist1 + dist2) / (2.0 * dist3)
+    except Exception as e:
+        logger.debug(f"EAR 계산 오류: {e}")
         return 0
 
 def estimate_iris_from_eye(landmarks, eye_corners, eye_tb, frame_w, frame_h):
-    """기본 눈 랜드마크로부터 홍채 위치 추정"""
+    """홍채 위치 추정 (fallback용)"""
     try:
-        # 눈의 양 끝점
-        left_corner = [landmarks.landmark[eye_corners[0]].x * frame_w, 
-                      landmarks.landmark[eye_corners[0]].y * frame_h]
-        right_corner = [landmarks.landmark[eye_corners[1]].x * frame_w, 
-                       landmarks.landmark[eye_corners[1]].y * frame_h]
+        left_corner = [landmarks.landmark[eye_corners[0]].x * frame_w,
+                       landmarks.landmark[eye_corners[0]].y * frame_h]
+        right_corner = [landmarks.landmark[eye_corners[1]].x * frame_w,
+                        landmarks.landmark[eye_corners[1]].y * frame_h]
+        top_point = [landmarks.landmark[eye_tb[0]].x * frame_w,
+                     landmarks.landmark[eye_tb[0]].y * frame_h]
+        bottom_point = [landmarks.landmark[eye_tb[1]].x * frame_w,
+                        landmarks.landmark[eye_tb[1]].y * frame_h]
         
-        # 눈의 위아래점
-        top_point = [landmarks.landmark[eye_tb[0]].x * frame_w, 
-                    landmarks.landmark[eye_tb[0]].y * frame_h]
-        bottom_point = [landmarks.landmark[eye_tb[1]].x * frame_w, 
-                       landmarks.landmark[eye_tb[1]].y * frame_h]
-        
-        # 눈의 중심점 계산 (좌우 중점, 상하 중점)
         center_x = (left_corner[0] + right_corner[0]) / 2
         center_y = (top_point[1] + bottom_point[1]) / 2
-        
         return int(center_x), int(center_y)
-    except:
+    except Exception as e:
+        logger.debug(f"홍채 위치 추정 오류: {e}")
         return None, None
 
-# 카메라 설정
-cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+def is_fist(hand_landmarks):
+    """주먹 감지: 모든 손가락이 접혔는지 확인"""
+    try:
+        FIST_LANDMARKS = [8, 12, 16, 20]  # index/middle/ring/pinky tips
+        folded_count = 0
+        
+        for tip_idx in FIST_LANDMARKS:
+            tip = hand_landmarks.landmark[tip_idx]
+            pip = hand_landmarks.landmark[tip_idx - 2]
+            if tip.y > pip.y:  # 손가락 끝이 아래에 있으면 접힌 것
+                folded_count += 1
+        
+        # 4개 손가락 중 3개 이상 접혔으면 주먹으로 판단
+        return folded_count >= 3
+    except Exception as e:
+        logger.debug(f"주먹 감지 오류: {e}")
+        return False
 
-frame_count = 0
-smoothing_factor = 0.3  # 마우스 움직임 스무딩
-prev_x, prev_y = screen_w//2, screen_h//2
+# ===== WebSocket 통신 =====
+def send_message_sync(payload: dict):
+    """동기 방식으로 메시지 전송 (별도 스레드에서 실행)"""
+    try:
+        # 새 이벤트 루프 생성해서 실행
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def _send():
+            async with websockets.connect(SERVER_URI) as ws:
+                await ws.send(json.dumps(payload))
+        
+        loop.run_until_complete(_send())
+        loop.close()
+        logger.info(f"메시지 전송 성공: {payload}")
+        return True
+    except Exception as e:
+        logger.error(f"메시지 전송 실패: {e}")
+        return False
 
-# 깜빡임 감지 변수들
-EAR_THRESHOLD = 0.25  # 눈 감김 임계값
-BLINK_FRAMES = 2  # 깜빡임으로 인정할 최소 프레임 수
-DOUBLE_BLINK_TIME = 1  # 더블 깜빡임 인정 시간 (초)
+# 스레드 풀 생성
+executor = ThreadPoolExecutor(max_workers=2)
 
-blink_counter = 0
-total_blinks = 0
-blink_times = []  # 깜빡임 시간 기록
-last_click_time = 0  # 마지막 클릭 시간 (중복 클릭 방지)
+def send_message_async(payload: dict):
+    """비동기로 메시지 전송"""
+    future = executor.submit(send_message_sync, payload)
+    return future
 
-print(f"화면 해상도: {screen_w}x{screen_h}")
-print("'q'를 눌러 종료")
-print("빠르게 두 번 깜빡이면 클릭됩니다!")
-
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret or frame is None:
-        print("카메라 프레임을 불러올 수 없습니다!")
-        break
+# ===== 메인 처리 루프 =====
+def main():
+    global frame_count, prev_x, prev_y, _running
     
-    frame_count += 1
-    if frame_count % 10 != 0:  # 성능을 위해 프레임 스킵
-        continue
+    if not cap:
+        logger.error("카메라가 초기화되지 않아 종료합니다")
+        return
     
-    h, w = frame.shape[:2]
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    if not face_mesh:
+        logger.error("FaceMesh가 초기화되지 않아 종료합니다")
+        return
     
-    # 손 인식
-    hand_results = hands.process(frame_rgb)
-    if hand_results.multi_hand_landmarks:
-        for hand_landmarks in hand_results.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(
-                frame,
-                hand_landmarks,
-                mp_hands.HAND_CONNECTIONS
-            )
+    logger.info(f"아이트래킹 시작 - 모드: {MODE}")
     
-    # 얼굴(눈동자) 인식
-    face_results = face_mesh.process(frame_rgb)
-    if face_results.multi_face_landmarks:
-        for face_landmarks in face_results.multi_face_landmarks:
-            try:
-                if use_iris:
-                    # 방법 1: 홍채 랜드마크 사용 (refine_landmarks=True일 때)
-                    left_coords = np.array([
-                        [int(face_landmarks.landmark[i].x * w), int(face_landmarks.landmark[i].y * h)]
-                        for i in LEFT_IRIS
-                    ])
-                    (lx, ly) = np.mean(left_coords, axis=0).astype(int)
-                else:
-                    # 방법 2: 눈 코너로부터 홍채 위치 추정
-                    lx, ly = estimate_iris_from_eye(face_landmarks, LEFT_EYE_CORNERS, LEFT_EYE_TOP_BOTTOM, w, h)
-                    if lx is None or ly is None:
-                        continue
-                
-                # 화면 좌표로 변환 (좌우 반전 적용)
-                screen_x = np.interp(w - lx, [0, w], [0, screen_w])  # 좌우 반전
-                screen_y = np.interp(ly, [0, h], [0, screen_h])
-                
-                # 스무딩 적용
-                smooth_x = prev_x * (1 - smoothing_factor) + screen_x * smoothing_factor
-                smooth_y = prev_y * (1 - smoothing_factor) + screen_y * smoothing_factor
-                
-                # 마우스 이동
-                pyautogui.moveTo(smooth_x, smooth_y, duration=0.01)
-                
-                # 이전 위치 업데이트
-                prev_x, prev_y = smooth_x, smooth_y
-                
-                # 깜빡임 감지 (여기에 디버깅 출력 추가!)
-                left_ear = calculate_ear(face_landmarks, LEFT_EYE_MAIN, w, h)
-                right_ear = calculate_ear(face_landmarks, RIGHT_EYE_MAIN, w, h)
-                avg_ear = (left_ear + right_ear) / 2.0
-                
-                # 디버깅: EAR 값 실시간 출력 (너무 많으면 주석 처리)
-                # print(f"현재 EAR: {avg_ear:.3f} (임계값: {EAR_THRESHOLD})")
-                
-                # 눈이 감겼는지 확인
-                if avg_ear < EAR_THRESHOLD:
-                    blink_counter += 1
-                    # 디버깅: 눈 감김 감지
-                    if blink_counter == 1:  # 첫 프레임에만 출력
-                        print(f"👁️ 눈 감김 감지! EAR: {avg_ear:.3f} (프레임: {blink_counter})")
-                else:
-                    # 눈이 뜨였을 때 깜빡임 처리
-                    if blink_counter >= BLINK_FRAMES:
-                        current_time = time.time()
-                        blink_times.append(current_time)
-                        total_blinks += 1
-                        
-                        # 디버깅: 깜빡임 완료
-                        print(f"✨ 깜빡임 완료! 총 {blink_counter}프레임, EAR: {avg_ear:.3f}, 총 깜빡임: {total_blinks}")
-                        
-                        # 오래된 깜빡임 기록 제거 (DOUBLE_BLINK_TIME 이전의 것들)
-                        blink_times = [t for t in blink_times if current_time - t <= DOUBLE_BLINK_TIME]
-                        
-                        # 디버깅: 최근 깜빡임 기록
-                        print(f"📊 최근 {DOUBLE_BLINK_TIME}초 내 깜빡임: {len(blink_times)}번")
-                        
-                        # 더블 깜빡임 감지
-                        if len(blink_times) >= 2 and (current_time - last_click_time) > 1.0:
-                            # 최근 두 깜빡임이 빠른 간격으로 발생했는지 확인
-                            time_diff = blink_times[-1] - blink_times[-2]
-                            if time_diff <= DOUBLE_BLINK_TIME:
-                                print(f"🖱️ 더블 깜빡임 감지! 간격: {time_diff:.2f}초 -> 클릭 실행!")
-                                pyautogui.click()
-                                last_click_time = current_time
-                                blink_times.clear()  # 깜빡임 기록 초기화
-                                print("🔄 깜빡임 기록 초기화")
-                            else:
-                                print(f"⏰ 깜빡임 간격이 너무 김: {time_diff:.2f}초 (최대: {DOUBLE_BLINK_TIME}초)")
-                    elif blink_counter > 0:
-                        # 디버깅: 너무 짧은 깜빡임
-                        print(f"⚡ 너무 짧은 깜빡임 무시: {blink_counter}프레임 (최소: {BLINK_FRAMES}프레임)")
-                    
-                    blink_counter = 0
-                
-                # 디버그용 시각화
-                cv2.circle(frame, (lx, ly), 3, (0, 255, 255), -1)
-                cv2.putText(frame, f"Eye: ({lx},{ly})", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                cv2.putText(frame, f"Mouse: ({int(smooth_x)},{int(smooth_y)})", (10, 50), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-                cv2.putText(frame, f"EAR: {avg_ear:.3f}", (10, 70),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-                cv2.putText(frame, f"Blinks: {total_blinks}", (10, 90),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-                
-            except Exception as e:
-                print(f"눈 추적 중 오류: {e}")
+    try:
+        while _running and cap.isOpened():
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                logger.warning("카메라 프레임을 읽을 수 없습니다")
+                time.sleep(0.1)
                 continue
-    
-    # 화면 중앙에 십자선 표시 (캘리브레이션용)
-    cv2.line(frame, (w//2-10, h//2), (w//2+10, h//2), (0, 0, 255), 1)
-    cv2.line(frame, (w//2, h//2-10), (w//2, h//2+10), (0, 0, 255), 1)
-    
-    # 출력
-    cv2.imshow("Eye Tracking Mouse", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
 
-cap.release()
-cv2.destroyAllWindows()
+            frame_count += 1
+            
+            # 성능 최적화: N프레임마다 처리
+            if frame_count % PROCESSING_INTERVAL != 0:
+                cv2.imshow("Eye Tracking Mouse", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                continue
+
+            h, w = frame.shape[:2]
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # ===== 손(주먹) 처리: mode_select에서만 =====
+            if MODE == "mode_select" and hands is not None:
+                try:
+                    hand_results = hands.process(frame_rgb)
+                    if hand_results.multi_hand_landmarks:
+                        for hand_landmarks in hand_results.multi_hand_landmarks:
+                            # 손 랜드마크 그리기
+                            mp_drawing.draw_landmarks(
+                                frame, hand_landmarks, mp_hands.HAND_CONNECTIONS
+                            )
+                            
+                            # 주먹 감지
+                            if is_fist(hand_landmarks):
+                                logger.info("주먹 감지! CHAT_ORDER_ON 전송 후 종료")
+                                # 비동기 메시지 전송
+                                send_message_async({
+                                    "type": "CHAT_ORDER_ON", 
+                                    "source": "worker"
+                                })
+                                _running = False
+                                break
+                        
+                        if not _running:
+                            break
+                except Exception as e:
+                    logger.error(f"손 처리 오류: {e}")
+
+            # ===== 얼굴/눈 처리 =====
+            try:
+                face_results = face_mesh.process(frame_rgb)
+                if face_results.multi_face_landmarks:
+                    for face_landmarks in face_results.multi_face_landmarks:
+                        try:
+                            # 홍채 위치 획득
+                            if use_iris:
+                                left_coords = np.array([
+                                    [int(face_landmarks.landmark[i].x * w), 
+                                     int(face_landmarks.landmark[i].y * h)]
+                                    for i in LEFT_IRIS
+                                ])
+                                if len(left_coords) > 0:
+                                    lx, ly = np.mean(left_coords, axis=0).astype(int)
+                                else:
+                                    continue
+                            else:
+                                lx, ly = estimate_iris_from_eye(
+                                    face_landmarks, LEFT_EYE_CORNERS, 
+                                    LEFT_EYE_TOP_BOTTOM, w, h
+                                )
+                                if lx is None or ly is None:
+                                    continue
+
+                            # 화면 좌표 변환 (좌우 반전)
+                            screen_x = np.interp(w - lx, [0, w], [0, screen_w])
+                            screen_y = np.interp(ly, [0, h], [0, screen_h])
+
+                            # 스무딩 적용
+                            smooth_x = prev_x * (1 - smoothing_factor) + screen_x * smoothing_factor
+                            smooth_y = prev_y * (1 - smoothing_factor) + screen_y * smoothing_factor
+
+                            # 마우스 이동 (시각화)
+                            try:
+                                pyautogui.moveTo(smooth_x, smooth_y, duration=0.01)
+                            except Exception as e:
+                                logger.debug(f"마우스 이동 오류: {e}")
+
+                            prev_x, prev_y = smooth_x, smooth_y
+
+                            # EAR 계산 (깜빡임 감지용 - 향후 확장 가능)
+                            left_ear = calculate_ear(face_landmarks, LEFT_EYE_MAIN, w, h)
+                            right_ear = calculate_ear(face_landmarks, RIGHT_EYE_MAIN, w, h)
+                            avg_ear = (left_ear + right_ear) / 2.0
+
+                            # 시각화
+                            cv2.circle(frame, (lx, ly), 3, (0, 255, 255), -1)
+                            cv2.putText(frame, f"EAR: {avg_ear:.3f}", (10, 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                            cv2.putText(frame, f"Mode: {MODE}", (10, 40),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+                        except Exception as e:
+                            logger.debug(f"얼굴 랜드마크 처리 오류: {e}")
+                            continue
+            except Exception as e:
+                logger.error(f"얼굴 처리 오류: {e}")
+
+            # 화면 중앙 십자선 (캘리브레이션용)
+            cv2.line(frame, (w//2-10, h//2), (w//2+10, h//2), (0, 0, 255), 1)
+            cv2.line(frame, (w//2, h//2-10), (w//2, h//2+10), (0, 0, 255), 1)
+
+            # 화면 표시
+            cv2.imshow("Eye Tracking Mouse", frame)
+            
+            # 키 입력 처리
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                logger.info("사용자가 'q'를 눌러 종료")
+                break
+
+    except Exception as e:
+        logger.error(f"메인 루프 오류: {e}")
+    finally:
+        cleanup()
+
+def cleanup():
+    """리소스 정리"""
+    global cap, executor
+    
+    logger.info("리소스 정리 중...")
+    
+    try:
+        if cap:
+            cap.release()
+    except:
+        pass
+    
+    try:
+        cv2.destroyAllWindows()
+    except:
+        pass
+    
+    try:
+        if executor:
+            executor.shutdown(wait=True)
+    except:
+        pass
+    
+    logger.info("리소스 정리 완료")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("사용자 인터럽트로 종료")
+    except Exception as e:
+        logger.error(f"실행 중 오류: {e}")
+    finally:
+        logger.info("아이트래킹 종료")
