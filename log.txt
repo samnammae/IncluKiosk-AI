@@ -1,8 +1,8 @@
-(IncluKiosk_venv) pi@raspberrypi:~/Inclukiosk $ python websocket.py
+(IncluKiosk_venv) pi@raspberrypi:~/IncluKiosk $ python websocket.py
 서버 시작됨 (0.0.0.0:8765)
 Ctrl+C로 종료
 클라이언트 연결됨
-받은 메시지: {"type":"PIR_ON","timestamp":"2025-08-11T16:38:14.898Z"}
+받은 메시지: {"type":"PIR_ON","timestamp":"2025-08-12T16:28:15.617Z"}
 파싱된 type: PIR_ON
 [PIR] Worker start | PIN=18, ACTIVE_HIGH=True, PULL=DOWN, WARMUP=2.0s, CONFIRM_COUNT=2, URI=ws://localhost:8765
 [PIR] Motion detected (edge/state change)
@@ -12,5 +12,26 @@ Ctrl+C로 종료
 파싱된 type: PIR_OFF
 [PIR] Sent PIR_OFF(source=worker) to ws://localhost:8765
 [PIR] Exit
-받은 메시지: {"type":"PIR_OFF","timestamp":"2025-08-11T16:38:40.357Z"}
+받은 메시지: {"type":"PIR_OFF","timestamp":"2025-08-12T16:28:23.639Z"}
 파싱된 type: PIR_OFF
+받은 메시지: {"type":"MODE_SELECT_ON","timestamp":"2025-08-12T16:28:33.176Z"}
+파싱된 type: MODE_SELECT_ON
+MODE_SELECT stub
+받은 메시지: {"type":"CHAT_ORDER_ON","timestamp":"2025-08-12T16:28:54.738Z"}
+파싱된 type: CHAT_ORDER_ON
+CHAT_ORDER stub
+받은 메시지: {"type":"NORMAL_ORDER_ON","timestamp":"2025-08-12T16:28:57.079Z"}
+파싱된 type: NORMAL_ORDER_ON
+NORMAL_ORDER stub
+받은 메시지: {"type":"ALL_RESET","timestamp":"2025-08-12T16:28:59.511Z"}
+파싱된 type: ALL_RESET
+받은 메시지: {"type":"PIR_ON","timestamp":"2025-08-12T16:29:01.495Z"}
+파싱된 type: PIR_ON
+[PIR] Worker start | PIN=18, ACTIVE_HIGH=True, PULL=DOWN, WARMUP=2.0s, CONFIRM_COUNT=2, URI=ws://localhost:8765
+[PIR] Motion detected (edge/state change)
+[PIR] Motion confirmed → notify server and exit
+클라이언트 연결됨
+받은 메시지: {"type": "PIR_OFF", "source": "worker"}
+파싱된 type: PIR_OFF
+[PIR] Sent PIR_OFF(source=worker) to ws://localhost:8765
+[PIR] Exit
