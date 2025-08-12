@@ -3,7 +3,6 @@ import websockets
 import subprocess
 import json
 import sys
-import signal
 import logging
 from pathlib import Path
 
@@ -23,15 +22,6 @@ PROCESS_TIMEOUT = 5  # 프로세스 종료 대기 시간 (초)
 # ===== 전역: 실행 중인 프로세스/클라이언트 관리 =====
 workers = {"PIR": None, "EYE": None}
 clients = set()  # 연결된 모든 클라이언트 소켓
-_shutdown_event = asyncio.Event()
-
-def _handle_signal(signum, frame):
-    """시그널 핸들러"""
-    logger.info(f"Signal {signum} received, shutting down...")
-    _shutdown_event.set()
-
-signal.signal(signal.SIGTERM, _handle_signal)
-signal.signal(signal.SIGINT, _handle_signal)
 
 # ===== 유틸리티 =====
 async def broadcast(payload: str):
@@ -267,9 +257,12 @@ async def handle_client(websocket, path=None):
 async def cleanup_on_shutdown():
     """종료 시 정리 작업"""
     logger.info("서버 종료 중... 모든 워커 정리")
-    await stop_pir()
-    await stop_eye()
-    logger.info("정리 작업 완료")
+    try:
+        await stop_pir()
+        await stop_eye()
+        logger.info("정리 작업 완료")
+    except Exception as e:
+        logger.error(f"정리 중 오류: {e}")
 
 async def main():
     """메인 서버 실행"""
@@ -277,11 +270,9 @@ async def main():
     logger.info("Ctrl+C로 종료")
     
     try:
-        # WebSocket 서버 시작
-        server = await websockets.serve(handle_client, "0.0.0.0", 8765)
-        
-        # 종료 시그널 대기
-        await _shutdown_event.wait()
+        # WebSocket 서버 시작 - 원래 방식으로 복구
+        async with websockets.serve(handle_client, "0.0.0.0", 8765):
+            await asyncio.Future()  # 무한 대기
         
     except Exception as e:
         logger.error(f"서버 실행 중 오류: {e}")
