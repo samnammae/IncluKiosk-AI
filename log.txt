@@ -35,3 +35,5 @@ NORMAL_ORDER stub
 파싱된 type: PIR_OFF
 [PIR] Sent PIR_OFF(source=worker) to ws://localhost:8765
 [PIR] Exit
+
+after this, finished with ctrl+C
