@@ -1,16 +1,152 @@
-(IncluKiosk_venv) pi@raspberrypi:~/Inclukiosk $ python websocket.py
-서버 시작됨 (0.0.0.0:8765)
-Ctrl+C로 종료
-클라이언트 연결됨
-받은 메시지: {"type":"PIR_ON","timestamp":"2025-08-11T16:38:14.898Z"}
-파싱된 type: PIR_ON
-[PIR] Worker start | PIN=18, ACTIVE_HIGH=True, PULL=DOWN, WARMUP=2.0s, CONFIRM_COUNT=2, URI=ws://localhost:8765
-[PIR] Motion detected (edge/state change)
-[PIR] Motion confirmed → notify server and exit
-클라이언트 연결됨
-받은 메시지: {"type": "PIR_OFF", "source": "worker"}
-파싱된 type: PIR_OFF
-[PIR] Sent PIR_OFF(source=worker) to ws://localhost:8765
-[PIR] Exit
-받은 메시지: {"type":"PIR_OFF","timestamp":"2025-08-11T16:38:40.357Z"}
-파싱된 type: PIR_OFF
+(IncluKiosk_venv) pi@raspberrypi:~/IncluKiosk $ python stt_gemini_tts.py
+==================================================
+🎙️  STT → Gemini → TTS (One-shot)
+==================================================
+
+⏺ 녹음 길이를 초 단위로 입력하세요 (기본 5, 종료:q): 5
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.front.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM front
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.side
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround51.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround21
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround51.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround21
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround40.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround40
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround51.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround41
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround51.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround50
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround51.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround51
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.surround71.0:CARD=0'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM surround71
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.iec958.0:CARD=0,AES0=4,AES1=130,AES2=0,AES3=2'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM iec958
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.iec958.0:CARD=0,AES0=4,AES1=130,AES2=0,AES3=2'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM spdif
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.iec958.0:CARD=0,AES0=4,AES1=130,AES2=0,AES3=2'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM spdif
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.hdmi
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.hdmi
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.modem
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.modem
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.phoneline
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM cards.pcm.phoneline
+Cannot connect to server socket err = No such file or directory
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+Cannot connect to server socket err = No such file or directory
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+ALSA lib pcm_oss.c:377:(_snd_pcm_oss_open) Unknown field port
+ALSA lib pcm_oss.c:377:(_snd_pcm_oss_open) Unknown field port
+ALSA lib pcm_a52.c:823:(_snd_pcm_a52_open) a52 is only for playback
+ALSA lib confmisc.c:1281:(snd_func_refer) Unable to find definition 'cards.bcm2835_hdmi.pcm.iec958.0:CARD=0,AES0=6,AES1=130,AES2=0,AES3=2'
+ALSA lib conf.c:4745:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5233:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2660:(snd_pcm_open_noupdate) Unknown PCM iec958:{AES0 0x6 AES1 0x82 AES2 0x0 AES3 0x2  CARD 0}
+ALSA lib pcm_usb_stream.c:486:(_snd_pcm_usb_stream_open) Invalid type for card
+ALSA lib pcm_usb_stream.c:486:(_snd_pcm_usb_stream_open) Invalid type for card
+Cannot connect to server socket err = No such file or directory
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+🎛️  Using input device index=3, name='ReSpeaker 4 Mic Array (UAC1.0): USB Audio (hw:2,0)'
+🎤 5초 동안 말씀해 주세요...
+🔴 녹음 완료!
+🔄 STT 요청 중...
+✅ STT 텍스트: '엔비디아 주가 전망에 대해 알려 줘' (신뢰도 92.37%)
+🤖 Gemini 응답 생성 중...
+✅ Gemini 응답: 엔비디아(NVIDIA) 주가 전망에 대해 종합적으로 알려드리겠습니다. 엔비디아는 인공지능(AI) 혁명의 핵심 동력으로 자리매김하며 최근 몇 년간 폭발적인 성장을 보여왔습니다.
+
+**1. 현재 상황 및 특징**
+
+*   **AI 반도체 시장 지배:** 데이터센터용 GPU 시장에서 압도적인 점유율(약 80% 이상)을 차지하며 AI 시대의 핵심 인프라 제공자 역할을 하고 있습니다.
+*   **CUDA 생태계:** 독점적인 소프트웨어 플랫폼인 CUDA는 개발자들이 엔비디아 GPU를 활용하도록 묶어두는 강력한 진입 장벽이자 경쟁 우위입니다.
+*   **높은 성장률과 수익성:** AI 수요 폭증으로 매출과 이익이 기하급수적으로 증가하고 있으며, 마진율도 매우 높습니다.
+*   **고평가 논란:** 엄청난 성장에도 불구하고, 현재 주가는 미래의 성장을 상당 부분 반영하고 있어 고평가 논란이 꾸준히 제기됩니다. PER(주가수익비율) 등 전통적인 지표로는 매우 높게 평가됩니다.
+
+**2. 긍정적 요인 (상승 가능성)**
+
+*   **지속적인 AI 수요 폭증:**
+    *   **클라우드 서비스 제공업체(CSP):** 아마존(AWS), 마이크로소프트(Azure), 구글(GCP) 등 주요 CSP들의 AI 투자 확대가 엔비디아 GPU 수요를 견인합니다.
+    *   **기업 및 정부 AI 도입:** 각 산업 분야에서 AI 도입이 가속화되면서 온프레미스(자체 서버) 및 엣지 AI 시장도 성장할 것입니다.
+    *   **차세대 AI 모델:** 더욱 크고 복잡한 AI 모델 개발에는 엔비디아의 차세대 GPU(예: 블랙웰, 루빈 등)가 필수적입니다.
+*   **신제품 출시 및 기술 리더십:**
+    *   **블랙웰 아키텍처:** 최근 발표된 B200, GB200 등 블랙웰 기반 제품들은 이전 세대 대비 엄청난 성능 향상을 약속하며, 이는 새로운 수요를 창출할 것입니다.
+    *   **AI 소프트웨어 및 플랫폼 확장:** 하드웨어뿐만 아니라 CUDA, NIM(NVIDIA Inference Microservices) 등 소프트웨어 솔루션 생태계를 확장하여 수익 모델을 다각화합니다.
+*   **다양한 산업 분야 확장:**
+    *   **자율주행:** 드라이브(DRIVE) 플랫폼을 통해 자동차 산업의 AI 솔루션 제공을 확대하고 있습니다.
+    *   **헬스케어, 로봇공학, 산업용 메타버스(옴니버스):** 이들 분야에서도 엔비디아의 GPU 및 AI 기술 활용이 늘어나고 있습니다.
+*   **강력한 재무 구조:** 높은 현금 창출 능력과 탄탄한 대차대조표를 바탕으로 연구 개발 및 전략적 투자를 지속할 수 있습니다.
+
+**3. 부정적 요인 및 위험 요소 (하락 가능성)**
+
+*   **고평가 부담 및 변동성:**
+    *   **기대치 미달 위험:** 현재 주가는 매우 높은 성장률을 가정하고 있어, 조금이라도 기대치에 미달하는 실적을 발표할 경우 큰 폭의 조정이 올 수 있습니다.
+    *   **매크로 경제 불확실성:** 고금리 지속, 경기 침체 우려 등 거시 경제 상황이 악화될 경우 기업들의 AI 투자 속도가 둔화될 수 있습니다.
+*   **경쟁 심화:**
+    *   **AMD 및 인텔의 추격:** AMD의 MI 시리즈, 인텔의 가우디(Gaudi) 시리즈 등 경쟁사들이 AI 반도체 시장에서 점유율 확대를 노리고 있습니다.
+    *   **클라우드 기업의 자체 칩 개발:** 구글(TPU), 아마존(Inferentia, Trainium), 마이크로소프트(Maia) 등 주요 고객사들이 자체 AI 칩을 개발하여 엔비디아 의존도를 줄이려 합니다. 이는 장기적으로 엔비디아의 성장률에 영향을 미칠 수 있습니다.
+*   **지정학적 리스크:**
+    *   **미-중 기술 갈등:** 미국 정부의 대중국 AI 반도체 수출 규제가 강화될 경우, 중국 시장에서의 매출에 직접적인 타격을 입을 수 있습니다.
+    *   **공급망 위험:** TSMC 등 파운드리 의존도가 높아, 특정 지역의 지정학적 리스크나 생산 차질이 발생할 경우 공급에 문제가 생길 수 있습니다.
+*   **독점 규제 가능성:** 압도적인 시장 지배력으로 인해 향후 독점 규제 당국의 감시가 강화될 수 있습니다.
+
+**4. 전문가 분석 및 결론**
+
+대부분의 증권사 및 투자 기관은 엔비디아에 대해 **긍정적인 투자의견(매수 또는 비중 확대)**을 유지하고 있으며, 목표 주가도 지속적으로 상향 조정하고 있습니다. 이는 엔비디아가 AI 시대를 이끄는 핵심 기업이며, 아직 성장 잠재력이 크다고 보기 때문입니다.
+
+**종합적인 관점:**
+
+엔비디아는 AI 혁명의 최전선에 있는 기업으로서 강력한 성장 모멘텀과 기술적 해자를 가지고 있습니다. 장기적으로 AI 시장의 성장은 엔비디아에 긍정적인 영향을 미칠 것입니다.
+
+하지만 이미 주가가 상당 부분 미래 성장을 반영하고 있어 **변동성이 매우 클 수 있습니다.** 경쟁 심화, 지정학적 리스크, 고평가 논란 등은 항상 염두에 두어야 할 위험 요소입니다.
+
+**투자 조언:**
+
+*   **장기적 관점:** AI 산업의 성장을 믿는다면 장기적인 관점에서 접근하는 것이 유리할 수 있습니다.
+*   **위험 관리:** 높은 변동성 때문에 투자 비중 조절과 분산 투자를 통해 위험을 관리하는 것이 중요합니다.
+*   **지속적인 모니터링:** AI 기술 발전, 경쟁 환경 변화, 실적 발표, 지정학적 이슈 등을 꾸준히 모니터링해야 합니다.
+
+**면책 조항:** 이 정보는 투자 조언이 아니며, 투자는 본인의 판단과 책임하에 이루어져야 합니다. 투자 결정을 내리기 전에 전문가와 상담하는 것을 권장합니다.
+🔄 TTS 합성 중...
+
+❗오류 발생:
+synthesize_speech() got an unexpected keyword argument 'audio'
+Traceback (most recent call last):
+  File "/home/pi/IncluKiosk/stt_gemini_tts.py", line 163, in stt_gemini_tts
+    speak_text(reply)
+  File "/home/pi/IncluKiosk/stt_gemini_tts.py", line 146, in speak_text
+    resp = client.synthesize_speech(input=synthesis_input, voice=voice, audio=audio_config)
+TypeError: synthesize_speech() got an unexpected keyword argument 'audio'
