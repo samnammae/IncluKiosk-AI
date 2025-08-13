@@ -5,8 +5,10 @@ import wave
 from google.cloud import texttospeech
 from google.cloud import speech
 from google import genai
+from dotenv import load_dotenv
 
 # ── 환경 변수(필수) ───────────────────────────────────────────────
+load_dotenv("/home/pi/IncluKiosk/config.env")
 # GCP STT/TTS 인증키
 os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", "/home/pi/IncluKiosk/gcp-tts-key.json")
 # Gemini API Key (export GEMINI_API_KEY="...") 로 설정해두세요.
