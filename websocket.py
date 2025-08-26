@@ -9,6 +9,7 @@ from pathlib import Path
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_worker.py")
+OBJECT_EYE = str(BASE_DIR / "object_eyecontrol.py")
 
 # ===== 전역: 실행 중인 프로세스/클라이언트 관리 =====
 workers = {
@@ -95,8 +96,7 @@ async def handle_client(websocket):
                     await stop_pir(websocket)
 
             elif msg_type == "MODE_SELECT_ON":
-                # CASE 3: 모드선택 진입 (아이트래킹/주먹감지 별도 워커로 확장 가능)
-                subprocess.Popen([PYTHON, "-c", "print('MODE_SELECT stub')"])
+                subprocess.Popen([PYTHON, OBJECT_EYE])
                 await websocket.send("MODE_SELECT_ON_ACK")
 
             elif msg_type == "CHAT_ORDER_ON":
