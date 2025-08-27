@@ -1,20 +1,20 @@
 (IncluKiosk_venv) pi@raspberrypi:~/IncluKiosk $ python gaze_tracking.py
-AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'
 Error in cpuinfo: prctl(PR_SVE_GET_VL) failed
 INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
 WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-W0000 00:00:1756322861.605427    7159 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
-W0000 00:00:1756322861.715537    7159 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1756323411.406920    7230 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1756323411.518400    7230 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
 Press 'q' to quit.
+W0000 00:00:1756323415.197841    7231 landmark_projection_calculator.cc:186] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
 Traceback (most recent call last):
-  File "/home/pi/IncluKiosk/gaze_tracking.py", line 53, in <module>
-    gaze.refresh(frame)
-  File "/home/pi/IncluKiosk/gaze_tracking/gaze_tracking.py", line 63, in refresh
-    self._analyze()
-  File "/home/pi/IncluKiosk/gaze_tracking/gaze_tracking.py", line 44, in _analyze
-    frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-cv2.error: OpenCV(4.11.0) /io/opencv/modules/imgproc/src/color.simd_helpers.hpp:92: error: (-15:Bad number of channels) in function 'cv::impl::{anonymous}::CvtHelper<VScn, VDcn, VDepth, sizePolicy>::CvtHelper(cv::InputArray, cv::OutputArray, int) [with VScn = cv::impl::{anonymous}::Set<3, 4>; VDcn = cv::impl::{anonymous}::Set<1>; VDepth = cv::impl::{anonymous}::Set<0, 2, 5>; cv::impl::{anonymous}::SizePolicy sizePolicy = cv::impl::<unnamed>::NONE; cv::InputArray = const cv::_InputArray&; cv::OutputArray = const cv::_OutputArray&]'
-> Invalid number of channels in input image:
->     'VScn::contains(scn)'
-> where
->     'scn' is 1
+  File "/home/pi/IncluKiosk/gaze_tracking.py", line 67, in <module>
+    hand_results = hands.process(frame_rgb)
+  File "/home/pi/.local/lib/python3.9/site-packages/mediapipe/python/solutions/hands.py", line 153, in process
+    return super().process(input_data={'image': image})
+  File "/home/pi/.local/lib/python3.9/site-packages/mediapipe/python/solution_base.py", line 351, in process
+    self._get_packet_content(self._output_stream_type_info[stream_name],
+  File "/home/pi/.local/lib/python3.9/site-packages/mediapipe/python/solution_base.py", line 595, in _get_packet_content
+    return getattr(packet_getter, 'get_' + packet_data_type.value)(
+  File "/home/pi/.local/lib/python3.9/site-packages/mediapipe/python/packet_getter.py", line 111, in get_proto_list
+    message_class = message_factory.GetMessageClass(descriptor)
+AttributeError: module 'google.protobuf.message_factory' has no attribute 'GetMessageClass'
