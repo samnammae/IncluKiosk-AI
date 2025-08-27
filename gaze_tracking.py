@@ -1,4 +1,4 @@
-# object_eyecontrol.py (revised: GazeTracking 기반 커서 제어)
+# object_eyecontrol.py (revised: GazeTracking + center face crop)
 import cv2
 import pyautogui
 import time
@@ -19,6 +19,10 @@ DEAD = 0.02          # 데드존(비율 기준), 미세 흔들림 무시
 EDGE_MARGIN = 0.00   # 0~0.10 권장, 가장자리로 못 가면 줄이기
 DOUBLE_BLINK_WINDOW = 1.0  # 초, 이 시간 내 2회 깜빡이면 클릭
 FRAME_WIDTH, FRAME_HEIGHT = 640, 480  # 필요시 해상도 조정
+
+# ▶ 추가: 중앙 얼굴 크롭 설정
+ENABLE_CENTER_CROP = True
+FACE_RATIO = 0.6  # 0~1 사이. 0.6이면 프레임의 60% 크기 정사각형을 중앙에서 크롭
 
 # ── (선택) MediaPipe Hands 초기화 ────────────────────────────────
 # mp_hands = mp.solutions.hands
@@ -58,9 +62,22 @@ while True:
     elif frame.shape[-1] == 1:
         frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
 
+    # === 중앙 얼굴 크롭(정사각형) ===
+    roi = frame
+    if ENABLE_CENTER_CROP:
+        h, w = frame.shape[:2]
+        side = int(min(w, h) * FACE_RATIO)
+        cx, cy = w // 2, h // 2
+        x0 = max(0, cx - side // 2)
+        y0 = max(0, cy - side // 2)
+        x1 = min(w, x0 + side)
+        y1 = min(h, y0 + side)
+        roi = frame[y0:y1, x0:x1]
+
     # ── 시선 분석 ────────────────────────────────────────────────
-    gaze.refresh(frame)
-    vis = gaze.annotated_frame()  # 눈 윤곽 등 시각화
+    gaze.refresh(roi)
+    # 가벼운 표시: annotated_frame() 대신 ROI 자체를 사용해도 됨
+    vis = roi  # gaze.annotated_frame() 써도 되지만 속도는 ROI 직접 표시가 더 낫다
 
     # ── (선택) 손 시각화 오버레이 ───────────────────────────────
     # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -97,9 +114,9 @@ while True:
         my = clamp(my, 0, SCREEN_H - 1)
         pyautogui.moveTo(mx, my)
 
-        # 디버그 텍스트
-        info = f"ratios hx={hx:.3f}, vy={vy:.3f}  mouse=({int(mx)},{int(my)})"
-        cv2.putText(vis, info, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (50, 180, 50), 2)
+        # 디버그 텍스트(ROI 크기 표기)
+        info = f"crop={roi.shape[1]}x{roi.shape[0]} hx={hx:.3f}, vy={vy:.3f}  mouse=({int(mx)},{int(my)})"
+        cv2.putText(vis, info, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (50, 180, 50), 1, cv2.LINE_AA)
 
     # ── 더블-블링크 클릭(예: 눈 두 번 빠르게 감기면 클릭) ─────────
     if gaze.is_blinking():
@@ -113,10 +130,10 @@ while True:
         if len(last_blinks) >= 2 and (last_blinks[-1] - last_blinks[-2]) <= DOUBLE_BLINK_WINDOW:
             pyautogui.click()
             last_blinks.clear()  # 다음 감지를 위해 초기화
-            cv2.putText(vis, "CLICK (double blink)", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 200, 255), 2)
+            cv2.putText(vis, "CLICK (double blink)", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 200, 255), 2)
 
     # ── 화면 출력 ────────────────────────────────────────────────
-    cv2.imshow("Eye Control (GazeTracking)", vis)
+    cv2.imshow("Eye Control (GazeTracking - Center Crop)", vis)
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
