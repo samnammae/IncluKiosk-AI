@@ -1,4 +1,4 @@
-# object_eyecontrol.py (final: GazeTracking + center crop + vertical stabilizers)
+# object_eyecontrol.py (final tuned: stronger horizontal movement)
 import cv2
 import pyautogui
 import time
@@ -15,18 +15,19 @@ SCREEN_W, SCREEN_H = pyautogui.size()
 
 # ── 튜닝 파라미터 ────────────────────────────────────────────────
 MIRRORED = True
-ALPHA_X = 0.35      # 가로 EMA
+ALPHA_X = 0.50      # 가로 EMA: 더 빠르게 따라감 (기존 0.35 → 0.50)
 ALPHA_Y = 0.12      # 세로 EMA(더 부드럽게)
-DEAD_X  = 0.02
+DEAD_X  = 0.01      # 가로 데드존 축소 (기존 0.02 → 0.01)
 DEAD_Y  = 0.04      # 세로 데드존 크게
+GAIN_X  = 1.35      # ⬅ 가로 감도 확대(1.2~1.6 사이 튜닝)
 GAIN_Y  = 0.85      # 세로 감도 축소(0.7~0.95 조절)
 EDGE_MARGIN = 0.00
-DOUBLE_BLINK_WINDOW = 1.0  # 클릭 비활성이라도 로직 유지
+DOUBLE_BLINK_WINDOW = 1.0
 FRAME_WIDTH, FRAME_HEIGHT = 640, 480
 
 # ▶ 중앙 얼굴 크롭 설정
 ENABLE_CENTER_CROP = True
-FACE_RATIO = 0.8  # 0~1, 프레임 대비 정사각형 ROI 비율
+FACE_RATIO = 0.4  # 0~1, 프레임 대비 정사각형 ROI 비율
 
 # ▶ 수직 신호 미디안 필터
 MEDIAN_WIN = 5     # 3/5/7 권장(홀수)
@@ -110,6 +111,11 @@ while True:
         hx = min(max(hx + bias_x, 0.0), 1.0)
         vy = min(max(vy + bias_y, 0.0), 1.0)
 
+        # ▶ 가로 신호: 중심 기준 선형 게인으로 확대
+        dx = hx - 0.5
+        hx = 0.5 + dx * GAIN_X
+        hx = 0.0 if hx < 0.0 else 1.0 if hx > 1.0 else hx  # clamp
+
         # ▶ 세로 신호 안정화: 미디안 + 감도 축소
         vy_hist.append(vy)
         vy_med = sorted(vy_hist)[len(vy_hist)//2] if vy_hist else vy
@@ -148,17 +154,6 @@ while True:
             f"[warmup:{frame_i<=WARMUP_FRAMES} cal:{calibrated}]"
         )
         cv2.putText(vis, info, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (50, 180, 50), 1, cv2.LINE_AA)
-
-    # # ── 더블-블링크 클릭(비활성) ───────────────────────────────
-    # if gaze.is_blinking():
-    #     now = time.time()
-    #     last_blinks = [t for t in last_blinks if now - t <= DOUBLE_BLINK_WINDOW]
-    #     if not last_blinks or (now - last_blinks[-1]) > 0.12:
-    #         last_blinks.append(now)
-    #     if len(last_blinks) >= 2 and (last_blinks[-1] - last_blinks[-2]) <= DOUBLE_BLINK_WINDOW:
-    #         pyautogui.click()
-    #         last_blinks.clear()
-    #         cv2.putText(vis, "CLICK (double blink)", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 200, 255), 2)
 
     # ── 화면 출력 ────────────────────────────────────────────────
     cv2.imshow("Eye Control (GazeTracking - Center Crop)", vis)
