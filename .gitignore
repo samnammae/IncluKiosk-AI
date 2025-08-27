@@ -1,2 +1,6 @@
 IncluKiosk_venv/
 yolov8n.pt
+gcp-tts-key.json
+output.mp3
+
+config.env
