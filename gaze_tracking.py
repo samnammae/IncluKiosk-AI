@@ -40,7 +40,8 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 # ── 상태 변수 ────────────────────────────────────────────────────
-mx, my = None, None                     # 커서의 현재(스무딩) 좌표
+mx, my = SCREEN_W // 2, SCREEN_H // 2   # 커서의 현재 좌표(중앙 시작)
+pyautogui.moveTo(mx, my)                # 시작 시 커서 중앙으로 이동
 last_blinks = []                        # 최근 깜빡임 타임스탬프
 
 def clamp(v, lo, hi):
