@@ -26,7 +26,7 @@ FRAME_WIDTH, FRAME_HEIGHT = 640, 480
 
 # ▶ 중앙 얼굴 크롭 설정
 ENABLE_CENTER_CROP = True
-FACE_RATIO = 0.6  # 0~1, 프레임 대비 정사각형 ROI 비율
+FACE_RATIO = 0.8  # 0~1, 프레임 대비 정사각형 ROI 비율
 
 # ▶ 수직 신호 미디안 필터
 MEDIAN_WIN = 5     # 3/5/7 권장(홀수)
