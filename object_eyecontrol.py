@@ -109,7 +109,7 @@ def estimate_iris_from_eye(landmarks, eye_corners, eye_tb, frame_w, frame_h):
         return None, None
 
 # 카메라 설정
-cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
