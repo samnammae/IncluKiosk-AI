@@ -4,7 +4,7 @@ import pyautogui
 import time
 
 # (선택) 손 시각화를 계속 쓰고 싶다면 유지
-import mediapipe as mp
+# import mediapipe as mp
 from gaze_tracking import GazeTracking
 
 # ── 마우스/화면 설정 ─────────────────────────────────────────────
@@ -21,9 +21,9 @@ DOUBLE_BLINK_WINDOW = 1.0  # 초, 이 시간 내 2회 깜빡이면 클릭
 FRAME_WIDTH, FRAME_HEIGHT = 640, 480  # 필요시 해상도 조정
 
 # ── (선택) MediaPipe Hands 초기화 ────────────────────────────────
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5)
+# mp_hands = mp.solutions.hands
+# mp_drawing = mp.solutions.drawing_utils
+# hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5)
 
 # ── GazeTracking 초기화 ──────────────────────────────────────────
 gaze = GazeTracking()
@@ -63,11 +63,11 @@ while True:
     vis = gaze.annotated_frame()  # 눈 윤곽 등 시각화
 
     # ── (선택) 손 시각화 오버레이 ───────────────────────────────
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    hand_results = hands.process(frame_rgb)
-    if hand_results.multi_hand_landmarks:
-        for hand_landmarks in hand_results.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(vis, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # hand_results = hands.process(frame_rgb)
+    # if hand_results.multi_hand_landmarks:
+    #     for hand_landmarks in hand_results.multi_hand_landmarks:
+    #         mp_drawing.draw_landmarks(vis, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
     # ── 시선 비율 읽기(0~1) → 화면 좌표 매핑 ────────────────────
     hx = gaze.horizontal_ratio()
