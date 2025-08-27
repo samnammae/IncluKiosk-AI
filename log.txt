@@ -1,16 +1,255 @@
-(IncluKiosk_venv) pi@raspberrypi:~/Inclukiosk $ python websocket.py
-서버 시작됨 (0.0.0.0:8765)
-Ctrl+C로 종료
-클라이언트 연결됨
-받은 메시지: {"type":"PIR_ON","timestamp":"2025-08-11T16:38:14.898Z"}
-파싱된 type: PIR_ON
-[PIR] Worker start | PIN=18, ACTIVE_HIGH=True, PULL=DOWN, WARMUP=2.0s, CONFIRM_COUNT=2, URI=ws://localhost:8765
-[PIR] Motion detected (edge/state change)
-[PIR] Motion confirmed → notify server and exit
-클라이언트 연결됨
-받은 메시지: {"type": "PIR_OFF", "source": "worker"}
-파싱된 type: PIR_OFF
-[PIR] Sent PIR_OFF(source=worker) to ws://localhost:8765
-[PIR] Exit
-받은 메시지: {"type":"PIR_OFF","timestamp":"2025-08-11T16:38:40.357Z"}
-파싱된 type: PIR_OFF
+(IncluKiosk_venv) pi@raspberrypi:~/IncluKiosk $ pip install dlib
+Looking in indexes: https://pypi.org/simple, https://www.piwheels.org/simple
+Collecting dlib
+  Downloading dlib-20.0.0.tar.gz (3.3 MB)
+     |████████████████████████████████| 3.3 MB 554 kB/s 
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+    Preparing wheel metadata ... done
+Building wheels for collected packages: dlib
+  Building wheel for dlib (PEP 517) ... error
+  ERROR: Command errored out with exit status 1:
+   command: /usr/bin/python3 /tmp/tmppb4z7erx_in_process.py build_wheel /tmp/tmpgmekm1v5
+       cwd: /tmp/pip-install-on7zwz4u/dlib_c66ec4bc6bf74688b316b208c02b7d8e
+  Complete output (237 lines):
+  running bdist_wheel
+  running build
+  running build_ext
+  Building extension for Python 3.9.2 (default, Mar 20 2025, 02:07:39)
+  Invoking CMake setup: 'cmake /tmp/pip-install-on7zwz4u/dlib_c66ec4bc6bf74688b316b208c02b7d8e/tools/python -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=/tmp/pip-install-on7zwz4u/dlib_c66ec4bc6bf74688b316b208c02b7d8e/build/lib.linux-aarch64-3.9 -DPYTHON_EXECUTABLE=/usr/bin/python3 -DDLIB_USE_FFMPEG=OFF -DCMAKE_BUILD_TYPE=Release'
+  -- The C compiler identification is GNU 10.2.1
+  -- The CXX compiler identification is GNU 10.2.1
+  -- Detecting C compiler ABI info
+  -- Detecting C compiler ABI info - done
+  -- Check for working C compiler: /usr/bin/cc - skipped
+  -- Detecting C compile features
+  -- Detecting C compile features - done
+  -- Detecting CXX compiler ABI info
+  -- Detecting CXX compiler ABI info - done
+  -- Check for working CXX compiler: /usr/bin/c++ - skipped
+  -- Detecting CXX compile features
+  -- Detecting CXX compile features - done
+  -- pybind11 v2.12.0
+  -- Found PythonInterp: /usr/bin/python3 (found suitable version "3.9.2", minimum required is "3.6")
+  -- Found PythonLibs: /usr/lib/aarch64-linux-gnu/libpython3.9.so
+  -- Performing Test HAS_FLTO
+  -- Performing Test HAS_FLTO - Success
+  -- Using CMake version: 3.18.4
+  -- Compiling dlib version: 20.0.0
+  -- Looking for pthread.h
+  -- Looking for pthread.h - found
+  -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+  -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+  -- Looking for pthread_create in pthreads
+  -- Looking for pthread_create in pthreads - not found
+  -- Looking for pthread_create in pthread
+  -- Looking for pthread_create in pthread - found
+  -- Found Threads: TRUE
+  -- Found X11: /usr/include
+  -- Looking for XOpenDisplay in /usr/lib/aarch64-linux-gnu/libX11.so;/usr/lib/aarch64-linux-gnu/libXext.so
+  -- Looking for XOpenDisplay in /usr/lib/aarch64-linux-gnu/libX11.so;/usr/lib/aarch64-linux-gnu/libXext.so - found
+  -- Looking for gethostbyname
+  -- Looking for gethostbyname - found
+  -- Looking for connect
+  -- Looking for connect - found
+  -- Looking for remove
+  -- Looking for remove - found
+  -- Looking for shmat
+  -- Looking for shmat - found
+  -- Looking for IceConnectionNumber in ICE
+  -- Looking for IceConnectionNumber in ICE - found
+  -- Found system copy of libpng: /usr/lib/aarch64-linux-gnu/libpng.so;/usr/lib/aarch64-linux-gnu/libz.so
+  -- Found system copy of libjpeg: /usr/lib/aarch64-linux-gnu/libjpeg.so
+  -- Searching for JPEG XL
+  -- Found PkgConfig: /usr/bin/pkg-config (found version "0.29.2")
+  -- Checking for modules 'libjxl;libjxl_cms;libjxl_threads'
+  --   No package 'libjxl' found
+  --   No package 'libjxl_cms' found
+  --   No package 'libjxl_threads' found
+   *****************************************************************************
+   *** No JPEG XL libraries found.                                           ***
+   *** On Ubuntu 23.04 and newer you can install them by executing           ***
+   ***    sudo apt install libjxl-dev                                        ***
+   ***                                                                       ***
+   *** Otherwise, you can find precompiled packages here:                    ***
+   ***    https://github.com/libjxl/libjxl/releases                          ***
+   *****************************************************************************
+  -- Searching for BLAS and LAPACK
+  -- Searching for BLAS and LAPACK
+  -- Checking for module 'cblas'
+  --   No package 'cblas' found
+  -- Checking for module 'lapack'
+  --   Found lapack, version 0.3.13+ds
+  -- Looking for cblas_ddot
+  -- Looking for cblas_ddot - not found
+  -- Looking for sys/types.h
+  -- Looking for sys/types.h - found
+  -- Looking for stdint.h
+  -- Looking for stdint.h - found
+  -- Looking for stddef.h
+  -- Looking for stddef.h - found
+  -- Check size of void*
+  -- Check size of void* - done
+  -- Found OpenBLAS library
+  -- Looking for sgetrf_single
+  -- Looking for sgetrf_single - found
+  -- Using OpenBLAS's built in LAPACK
+  -- Looking for cblas_ddot
+  -- Looking for cblas_ddot - found
+  -- Looking for sgesv
+  -- Looking for sgesv - not found
+  -- Looking for sgesv_
+  -- Looking for sgesv_ - not found
+  CUDA_TOOLKIT_ROOT_DIR not found or specified
+  -- Could NOT find CUDA (missing: CUDA_TOOLKIT_ROOT_DIR CUDA_NVCC_EXECUTABLE CUDA_INCLUDE_DIRS CUDA_CUDART_LIBRARY) (Required is at least version "7.5")
+  -- Found CUDA, but CMake was unable to find the cuBLAS libraries that should be part of every basic CUDA install. Your CUDA install is somehow broken or incomplete. Since cuBLAS is required for dlib to use CUDA we won't use CUDA.
+  -- DID NOT FIND CUDA
+  -- Disabling CUDA support for dlib.  DLIB WILL NOT USE CUDA
+  -- Configuring done
+  -- Generating done
+  -- Build files have been written to: /tmp/pip-install-on7zwz4u/dlib_c66ec4bc6bf74688b316b208c02b7d8e/build/temp.linux-aarch64-3.9
+  Invoking CMake build: 'cmake --build . --config Release -- -j2'
+  Scanning dependencies of target dlib
+  [  1%] Building CXX object dlib_build/CMakeFiles/dlib.dir/base64/base64_kernel_1.cpp.o
+  [  2%] Building CXX object dlib_build/CMakeFiles/dlib.dir/bigint/bigint_kernel_1.cpp.o
+  [  3%] Building CXX object dlib_build/CMakeFiles/dlib.dir/bigint/bigint_kernel_2.cpp.o
+  [  4%] Building CXX object dlib_build/CMakeFiles/dlib.dir/bit_stream/bit_stream_kernel_1.cpp.o
+  [  5%] Building CXX object dlib_build/CMakeFiles/dlib.dir/entropy_decoder/entropy_decoder_kernel_1.cpp.o
+  [  6%] Building CXX object dlib_build/CMakeFiles/dlib.dir/entropy_decoder/entropy_decoder_kernel_2.cpp.o
+  [  7%] Building CXX object dlib_build/CMakeFiles/dlib.dir/entropy_encoder/entropy_encoder_kernel_1.cpp.o
+  [  9%] Building CXX object dlib_build/CMakeFiles/dlib.dir/entropy_encoder/entropy_encoder_kernel_2.cpp.o
+  [ 10%] Building CXX object dlib_build/CMakeFiles/dlib.dir/md5/md5_kernel_1.cpp.o
+  [ 11%] Building CXX object dlib_build/CMakeFiles/dlib.dir/tokenizer/tokenizer_kernel_1.cpp.o
+  [ 12%] Building CXX object dlib_build/CMakeFiles/dlib.dir/unicode/unicode.cpp.o
+  [ 13%] Building CXX object dlib_build/CMakeFiles/dlib.dir/test_for_odr_violations.cpp.o
+  [ 14%] Building CXX object dlib_build/CMakeFiles/dlib.dir/fft/fft.cpp.o
+  [ 15%] Building CXX object dlib_build/CMakeFiles/dlib.dir/sockets/sockets_kernel_1.cpp.o
+  [ 17%] Building CXX object dlib_build/CMakeFiles/dlib.dir/bsp/bsp.cpp.o
+  [ 18%] Building CXX object dlib_build/CMakeFiles/dlib.dir/dir_nav/dir_nav_kernel_1.cpp.o
+  [ 19%] Building CXX object dlib_build/CMakeFiles/dlib.dir/dir_nav/dir_nav_kernel_2.cpp.o
+  [ 20%] Building CXX object dlib_build/CMakeFiles/dlib.dir/dir_nav/dir_nav_extensions.cpp.o
+  [ 21%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/fonts.cpp.o
+  [ 22%] Building CXX object dlib_build/CMakeFiles/dlib.dir/linker/linker_kernel_1.cpp.o
+  [ 23%] Building CXX object dlib_build/CMakeFiles/dlib.dir/logger/extra_logger_headers.cpp.o
+  [ 25%] Building CXX object dlib_build/CMakeFiles/dlib.dir/logger/logger_kernel_1.cpp.o
+  [ 26%] Building CXX object dlib_build/CMakeFiles/dlib.dir/logger/logger_config_file.cpp.o
+  [ 27%] Building CXX object dlib_build/CMakeFiles/dlib.dir/misc_api/misc_api_kernel_1.cpp.o
+  [ 28%] Building CXX object dlib_build/CMakeFiles/dlib.dir/misc_api/misc_api_kernel_2.cpp.o
+  [ 29%] Building CXX object dlib_build/CMakeFiles/dlib.dir/sockets/sockets_extensions.cpp.o
+  [ 30%] Building CXX object dlib_build/CMakeFiles/dlib.dir/sockets/sockets_kernel_2.cpp.o
+  [ 31%] Building CXX object dlib_build/CMakeFiles/dlib.dir/sockstreambuf/sockstreambuf.cpp.o
+  [ 32%] Building CXX object dlib_build/CMakeFiles/dlib.dir/sockstreambuf/sockstreambuf_unbuffered.cpp.o
+  [ 34%] Building CXX object dlib_build/CMakeFiles/dlib.dir/server/server_kernel.cpp.o
+  [ 35%] Building CXX object dlib_build/CMakeFiles/dlib.dir/server/server_iostream.cpp.o
+  [ 36%] Building CXX object dlib_build/CMakeFiles/dlib.dir/server/server_http.cpp.o
+  [ 37%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/multithreaded_object_extension.cpp.o
+  [ 38%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/threaded_object_extension.cpp.o
+  [ 39%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/threads_kernel_1.cpp.o
+  [ 40%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/threads_kernel_2.cpp.o
+  [ 42%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/threads_kernel_shared.cpp.o
+  [ 43%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/thread_pool_extension.cpp.o
+  [ 44%] Building CXX object dlib_build/CMakeFiles/dlib.dir/threads/async.cpp.o
+  [ 45%] Building CXX object dlib_build/CMakeFiles/dlib.dir/timer/timer.cpp.o
+  [ 46%] Building CXX object dlib_build/CMakeFiles/dlib.dir/stack_trace.cpp.o
+  [ 47%] Building CXX object dlib_build/CMakeFiles/dlib.dir/cuda/cpu_dlib.cpp.o
+  [ 48%] Building CXX object dlib_build/CMakeFiles/dlib.dir/cuda/tensor_tools.cpp.o
+  [ 50%] Building CXX object dlib_build/CMakeFiles/dlib.dir/data_io/image_dataset_metadata.cpp.o
+  [ 51%] Building CXX object dlib_build/CMakeFiles/dlib.dir/data_io/mnist.cpp.o
+  [ 52%] Building CXX object dlib_build/CMakeFiles/dlib.dir/data_io/cifar.cpp.o
+  [ 53%] Building CXX object dlib_build/CMakeFiles/dlib.dir/global_optimization/global_function_search.cpp.o
+  [ 54%] Building CXX object dlib_build/CMakeFiles/dlib.dir/filtering/kalman_filter.cpp.o
+  [ 55%] Building CXX object dlib_build/CMakeFiles/dlib.dir/svm/auto.cpp.o
+  [ 56%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/widgets.cpp.o
+  [ 57%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/drawable.cpp.o
+  [ 59%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/canvas_drawing.cpp.o
+  [ 60%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/style.cpp.o
+  [ 61%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_widgets/base_widgets.cpp.o
+  [ 62%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_core/gui_core_kernel_1.cpp.o
+  [ 63%] Building CXX object dlib_build/CMakeFiles/dlib.dir/gui_core/gui_core_kernel_2.cpp.o
+  [ 64%] Building CXX object dlib_build/CMakeFiles/dlib.dir/image_loader/png_loader.cpp.o
+  [ 65%] Building CXX object dlib_build/CMakeFiles/dlib.dir/image_saver/save_png.cpp.o
+  [ 67%] Building CXX object dlib_build/CMakeFiles/dlib.dir/image_loader/jpeg_loader.cpp.o
+  [ 68%] Building CXX object dlib_build/CMakeFiles/dlib.dir/image_saver/save_jpeg.cpp.o
+  [ 69%] Linking CXX static library libdlib.a
+  [ 69%] Built target dlib
+  Scanning dependencies of target _dlib_pybind11
+  [ 70%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/dlib.cpp.o
+  [ 71%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/matrix.cpp.o
+  [ 72%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/vector.cpp.o
+  [ 73%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/svm_c_trainer.cpp.o
+  [ 75%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/svm_rank_trainer.cpp.o
+  [ 76%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/decision_functions.cpp.o
+  [ 77%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/other.cpp.o
+  [ 78%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/basic.cpp.o
+  [ 79%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/cca.cpp.o
+  [ 80%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/sequence_segmenter.cpp.o
+  [ 81%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/svm_struct.cpp.o
+  [ 82%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/image.cpp.o
+  [ 84%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/image2.cpp.o
+  [ 85%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/image3.cpp.o
+  [ 86%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/image4.cpp.o
+  [ 87%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/rectangles.cpp.o
+  [ 88%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/object_detection.cpp.o
+  [ 89%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/shape_predictor.cpp.o
+  [ 90%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/correlation_tracker.cpp.o
+  [ 92%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/face_recognition.cpp.o
+  [ 93%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/cnn_face_detector.cpp.o
+  [ 94%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/global_optimization.cpp.o
+  [ 95%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/image_dataset_metadata.cpp.o
+  [ 96%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/numpy_returns.cpp.o
+  [ 97%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/line.cpp.o
+  [ 98%] Building CXX object CMakeFiles/_dlib_pybind11.dir/src/gui.cpp.o
+  [100%] Linking CXX shared module /tmp/pip-install-on7zwz4u/dlib_c66ec4bc6bf74688b316b208c02b7d8e/build/lib.linux-aarch64-3.9/_dlib_pybind11.cpython-39-aarch64-linux-gnu.so
+  [100%] Built target _dlib_pybind11
+  running install
+  running install_lib
+  Traceback (most recent call last):
+    File "/tmp/tmppb4z7erx_in_process.py", line 280, in <module>
+      main()
+    File "/tmp/tmppb4z7erx_in_process.py", line 263, in main
+      json_out['return_val'] = hook(**hook_input['kwargs'])
+    File "/tmp/tmppb4z7erx_in_process.py", line 204, in build_wheel
+      return _build_backend().build_wheel(wheel_directory, config_settings,
+    File "/usr/lib/python3/dist-packages/setuptools/build_meta.py", line 216, in build_wheel
+      return self._build_with_temp_dir(['bdist_wheel'], '.whl',
+    File "/usr/lib/python3/dist-packages/setuptools/build_meta.py", line 202, in _build_with_temp_dir
+      self.run_setup()
+    File "/usr/lib/python3/dist-packages/setuptools/build_meta.py", line 145, in run_setup
+      exec(compile(code, __file__, 'exec'), locals())
+    File "setup.py", line 243, in <module>
+      setup(
+    File "/usr/lib/python3/dist-packages/setuptools/__init__.py", line 153, in setup
+      return distutils.core.setup(**attrs)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/core.py", line 148, in setup
+      dist.run_commands()
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/dist.py", line 967, in run_commands
+      self.run_command(cmd)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/dist.py", line 986, in run_command
+      cmd_obj.run()
+    File "/usr/lib/python3/dist-packages/wheel/bdist_wheel.py", line 259, in run
+      self.run_command('install')
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/cmd.py", line 313, in run_command
+      self.distribution.run_command(command)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/dist.py", line 986, in run_command
+      cmd_obj.run()
+    File "/usr/lib/python3/dist-packages/setuptools/command/install.py", line 61, in run
+      return orig.install.run(self)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/command/install.py", line 578, in run
+      self.run_command(cmd_name)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/cmd.py", line 313, in run_command
+      self.distribution.run_command(command)
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/dist.py", line 985, in run_command
+      cmd_obj.ensure_finalized()
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/cmd.py", line 107, in ensure_finalized
+      self.finalize_options()
+    File "/usr/lib/python3/dist-packages/setuptools/command/install_lib.py", line 17, in finalize_options
+      self.set_undefined_options('install',('install_layout','install_layout'))
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/cmd.py", line 290, in set_undefined_options
+      setattr(self, dst_option, getattr(src_cmd_obj, src_option))
+    File "/usr/lib/python3/dist-packages/setuptools/_distutils/cmd.py", line 103, in __getattr__
+      raise AttributeError(attr)
+  AttributeError: install_layout
+  ----------------------------------------
+  ERROR: Failed building wheel for dlib
+Failed to build dlib
+ERROR: Could not build wheels for dlib which use PEP 517 and cannot be installed directly
