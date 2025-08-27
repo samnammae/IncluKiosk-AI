@@ -28,6 +28,9 @@ hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.5)
 # ── GazeTracking 초기화 ──────────────────────────────────────────
 gaze = GazeTracking()
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+
+# ▶ 컬러 프레임 유도를 위한 FOURCC (M-JPEG 권장)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 # 지연 줄이고 싶으면 해상도 낮추기
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
@@ -48,6 +51,12 @@ while True:
 
     # === 프레임 180도 회전 === <--임시!
     frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+    # === 채널 보정: 단일 채널이면 BGR 3채널로 변환 ===
+    if frame.ndim == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    elif frame.shape[-1] == 1:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
 
     # ── 시선 분석 ────────────────────────────────────────────────
     gaze.refresh(frame)
