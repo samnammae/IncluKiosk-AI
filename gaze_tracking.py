@@ -1,4 +1,4 @@
-# object_eyecontrol.py (revised: GazeTracking + center face crop)
+# object_eyecontrol.py (revised: GazeTracking + center face crop + warmup & calibration)
 import cv2
 import pyautogui
 import time
@@ -44,6 +44,13 @@ mx, my = SCREEN_W // 2, SCREEN_H // 2   # 커서의 현재 좌표(중앙 시작)
 pyautogui.moveTo(mx, my)                # 시작 시 커서 중앙으로 이동
 last_blinks = []                        # 최근 깜빡임 타임스탬프
 
+# ▶ 추가: 워밍업/캘리브레이션 상태
+frame_i = 0
+WARMUP_FRAMES = 30        # 시작 1초 정도(30fps 가정) 마우스 잠금
+calibrated = False
+bias_x = 0.0
+bias_y = 0.0
+
 def clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
 
@@ -53,6 +60,8 @@ while True:
     if not ok:
         print("❌ 카메라 프레임을 불러올 수 없습니다.")
         break
+
+    frame_i += 1
 
     # === 프레임 180도 회전 === <--임시!
     frame = cv2.rotate(frame, cv2.ROTATE_180)
@@ -92,6 +101,16 @@ while True:
     vy = gaze.vertical_ratio()
 
     if hx is not None and vy is not None:
+        # ▶ 캘리브레이션(한 번만): 워밍업이 끝나면 그때의 시선을 중앙(0.5, 0.5)으로 보정
+        if not calibrated and frame_i > WARMUP_FRAMES:
+            bias_x = 0.5 - hx
+            bias_y = 0.5 - vy
+            calibrated = True
+
+        # ▶ 보정 적용 + 경계 클램프
+        hx = min(max(hx + bias_x, 0.0), 1.0)
+        vy = min(max(vy + bias_y, 0.0), 1.0)
+
         # 좌우 반전 카메라면 보정
         if MIRRORED:
             hx = 1.0 - hx
@@ -100,38 +119,46 @@ while True:
         target_x = (EDGE_MARGIN + hx * (1 - 2 * EDGE_MARGIN)) * SCREEN_W
         target_y = (EDGE_MARGIN + vy * (1 - 2 * EDGE_MARGIN)) * SCREEN_H
 
-        # 초기엔 바로 세팅, 이후엔 데드존/EMA 스무딩 적용
-        if mx is None or my is None:
-            mx, my = target_x, target_y
+        # ── 워밍업 동안 커서 고정(중앙 유지) ─────────────────────
+        if frame_i <= WARMUP_FRAMES:
+            pass
         else:
-            if abs(target_x - mx) < DEAD * SCREEN_W and abs(target_y - my) < DEAD * SCREEN_H:
-                pass  # 변화 작으면 유지
+            # 초기엔 바로 세팅, 이후엔 데드존/EMA 스무딩 적용
+            if mx is None or my is None:
+                mx, my = target_x, target_y
             else:
-                mx = ALPHA * target_x + (1 - ALPHA) * mx
-                my = ALPHA * target_y + (1 - ALPHA) * my
+                if abs(target_x - mx) < DEAD * SCREEN_W and abs(target_y - my) < DEAD * SCREEN_H:
+                    pass  # 변화 작으면 유지
+                else:
+                    mx = ALPHA * target_x + (1 - ALPHA) * mx
+                    my = ALPHA * target_y + (1 - ALPHA) * my
 
-        # 화면 경계 클램프 & 실제 이동
-        mx = clamp(mx, 0, SCREEN_W - 1)
-        my = clamp(my, 0, SCREEN_H - 1)
-        pyautogui.moveTo(mx, my)
+            # 화면 경계 클램프 & 실제 이동
+            mx = clamp(mx, 0, SCREEN_W - 1)
+            my = clamp(my, 0, SCREEN_H - 1)
+            pyautogui.moveTo(mx, my)
 
-        # 디버그 텍스트(ROI 크기 표기)
-        info = f"crop={roi.shape[1]}x{roi.shape[0]} hx={hx:.3f}, vy={vy:.3f}  mouse=({int(mx)},{int(my)})"
+        # 디버그 텍스트(ROI 크기/상태 표기)
+        info = (
+            f"crop={roi.shape[1]}x{roi.shape[0]} "
+            f"hx={hx:.3f}, vy={vy:.3f}  mouse=({int(mx)},{int(my)}) "
+            f"[warmup:{frame_i<=WARMUP_FRAMES} cal:{calibrated}]"
+        )
         cv2.putText(vis, info, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (50, 180, 50), 1, cv2.LINE_AA)
 
-    # ── 더블-블링크 클릭(예: 눈 두 번 빠르게 감기면 클릭) ─────────
-    if gaze.is_blinking():
-        now = time.time()
-        # 최근 기록 중 오래된 것 제거
-        last_blinks = [t for t in last_blinks if now - t <= DOUBLE_BLINK_WINDOW]
-        # 직전 프레임에서 뜬 상태였다가 이번 프레임에서 감김을 감지하려면
-        # 단순화를 위해 프레임 기반 중복 방지 없이 타임스탬프 추가
-        if not last_blinks or (now - last_blinks[-1]) > 0.12:  # 과도한 중복 방지(약간의 간격)
-            last_blinks.append(now)
-        if len(last_blinks) >= 2 and (last_blinks[-1] - last_blinks[-2]) <= DOUBLE_BLINK_WINDOW:
-            pyautogui.click()
-            last_blinks.clear()  # 다음 감지를 위해 초기화
-            cv2.putText(vis, "CLICK (double blink)", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 200, 255), 2)
+    # # ── 더블-블링크 클릭(예: 눈 두 번 빠르게 감기면 클릭) ─────────
+    # if gaze.is_blinking():
+    #     now = time.time()
+    #     # 최근 기록 중 오래된 것 제거
+    #     last_blinks = [t for t in last_blinks if now - t <= DOUBLE_BLINK_WINDOW]
+    #     # 직전 프레임에서 뜬 상태였다가 이번 프레임에서 감김을 감지하려면
+    #     # 단순화를 위해 프레임 기반 중복 방지 없이 타임스탬프 추가
+    #     if not last_blinks or (now - last_blinks[-1]) > 0.12:  # 과도한 중복 방지(약간의 간격)
+    #         last_blinks.append(now)
+    #     if len(last_blinks) >= 2 and (last_blinks[-1] - last_blinks[-2]) <= DOUBLE_BLINK_WINDOW:
+    #         pyautogui.click()
+    #         last_blinks.clear()  # 다음 감지를 위해 초기화
+    #         cv2.putText(vis, "CLICK (double blink)", (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 200, 255), 2)
 
     # ── 화면 출력 ────────────────────────────────────────────────
     cv2.imshow("Eye Control (GazeTracking - Center Crop)", vis)
