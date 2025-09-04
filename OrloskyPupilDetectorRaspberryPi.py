@@ -215,11 +215,16 @@ def run_with_haar_eyes(camera_index=0, quit_key='q'):
         cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml'
     )
 
-    cap = cv2.VideoCapture(camera_index)
+    # cap = cv2.VideoCapture(camera_index)
     # 동일 처리량으로 맞추려면 해상도 낮추기
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # cap.set(cv2.CAP_PROP_FPS, 30)
+    
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
     if not cap.isOpened():
         print("Error: Could not open camera.")
