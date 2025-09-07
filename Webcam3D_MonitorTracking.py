@@ -75,7 +75,12 @@ face_mesh = mp_face_mesh.FaceMesh(
 )
 
 # === Open webcam ===
-cap = cv2.VideoCapture(0)
+# cap = cv2.VideoCapture(0) # for webcam on laptop
+
+# RaspberryPi Camera Set
+cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -86,7 +91,8 @@ nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241,
                 3, 248]
 
 # ===== NEW: File writing for screen position =====
-screen_position_file = r"C:\Users\dmxth\Desktop\Orlosky\EyeTracker\Webcam3DTracker\screen_position.txt"
+# screen_position_file = r"C:\Users\dmxth\Desktop\Orlosky\EyeTracker\Webcam3DTracker\screen_position.txt"
+screen_position_file = r"/home/pi/IncluKiosk/screen_position.txt"
 
 def write_screen_position(x, y):
     """Write screen position to file, overwriting the same line"""
