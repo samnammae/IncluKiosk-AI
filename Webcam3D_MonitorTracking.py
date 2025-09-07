@@ -10,10 +10,15 @@ import pyautogui
 import threading
 import keyboard
 
+# Customized (cm)
+USER_MONITOR_DISTANCE = 40.0
+MONITOR_WIDTH_CM = 39.6
+MONITOR_HEIGHT_CM = 19.42
+
 # Screen and mouse control setup (from old script)
-MONITOR_WIDTH, MONITOR_HEIGHT = pyautogui.size()
-CENTER_X = MONITOR_WIDTH // 2
-CENTER_Y = MONITOR_HEIGHT // 2
+MONITOR_WIDTH_PX, MONITOR_HEIGHT_PX = pyautogui.size()
+CENTER_X = MONITOR_WIDTH_PX // 2
+CENTER_Y = MONITOR_HEIGHT_PX // 2
 mouse_control_enabled = False
 filter_length = 10
 gaze_length = 350
@@ -81,7 +86,7 @@ nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241,
                 3, 248]
 
 # ===== NEW: File writing for screen position =====
-screen_position_file = "C:/Storage/Google Drive/Software/EyeTracker3DPython/screen_position.txt"
+screen_position_file = r"C:\Users\dmxth\Desktop\Orlosky\EyeTracker\Webcam3DTracker\screen_position.txt"
 
 def write_screen_position(x, y):
     """Write screen position to file, overwriting the same line"""
@@ -128,9 +133,9 @@ def create_monitor_plane(head_center, R_final, face_landmarks, w, h,
         upc = 5.0
     
     # 2) Monitor geometry in world units
-    dist_cm = 50.0
+    dist_cm = USER_MONITOR_DISTANCE
 
-    mon_w_cm, mon_h_cm = 60.0, 40.0
+    mon_w_cm, mon_h_cm = MONITOR_WIDTH_CM, MONITOR_HEIGHT_CM
     half_w = (mon_w_cm * 0.5) * upc
     half_h = (mon_h_cm * 0.5) * upc
 
@@ -145,7 +150,7 @@ def create_monitor_plane(head_center, R_final, face_landmarks, w, h,
 
         # Place the monitor so its center is exactly at some point on the gaze ray
         # For simplicity: choose intersection at 50 cm from head_center along head_forward
-        plane_point = head_center + head_forward * (50.0 * upc)
+        plane_point = head_center + head_forward * (USER_MONITOR_DISTANCE * upc)
         plane_normal = head_forward
 
         denom = np.dot(plane_normal, gaze_dir)
@@ -154,10 +159,10 @@ def create_monitor_plane(head_center, R_final, face_landmarks, w, h,
             center_w = gaze_origin + t * gaze_dir
         else:
             # fallback: use fixed distance
-            center_w = head_center + head_forward * (50.0 * upc)
+            center_w = head_center + head_forward * (USER_MONITOR_DISTANCE * upc)
     else:
         # fallback: original placement
-        center_w = head_center + head_forward * (50.0 * upc)
+        center_w = head_center + head_forward * (USER_MONITOR_DISTANCE * upc)
 
     # Compute right/up using head orientation
     world_up = np.array([0, -1, 0], dtype=float)
@@ -411,12 +416,12 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     pitch_deg += calibration_offset_pitch
 
     # Map to full screen resolution
-    screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * MONITOR_WIDTH)
-    screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * MONITOR_HEIGHT)
+    screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * MONITOR_WIDTH_PX)
+    screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * MONITOR_HEIGHT_PX)
 
     # Clamp screen position to monitor bounds
-    screen_x = max(10, min(screen_x, MONITOR_WIDTH - 10))
-    screen_y = max(10, min(screen_y, MONITOR_HEIGHT - 10))
+    screen_x = max(10, min(screen_x, MONITOR_WIDTH_PX - 10))
+    screen_y = max(10, min(screen_y, MONITOR_HEIGHT_PX - 10))
 
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
 
