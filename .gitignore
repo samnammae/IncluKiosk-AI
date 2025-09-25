@@ -2,3 +2,6 @@
 /IncluKiosk_venv/
 /hc_venv/
 yolov8n.pt
+screen_position.txt
+backup_Webcam3D_MonitorTracking.py
+face-detector-quantized_edgetpu.tflite
