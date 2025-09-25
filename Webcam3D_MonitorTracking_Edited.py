@@ -32,19 +32,19 @@ last_face_bbox = None
 last_face_time = 0.0
 
 # 탐지/ROI 파라미터
-FACEMESH_EVERY = 3      # 3프레임마다 FaceMesh
-FACE_TTL = 3.0          
-DETECT_EVERY = 6        # 6프레임마다 TPU 탐지
-DETECT_SCORE_TH = 0.5   # 임계값 낮춤
-ROI_MARGIN = 0.25       
-ALLOW_FALLBACK_FULLFRAME = True  # 일단 True로
+FACEMESH_EVERY = 3
+FACE_TTL = 3.0
+DETECT_EVERY = 6
+DETECT_SCORE_TH = 0.5
+ROI_MARGIN = 0.25
+ALLOW_FALLBACK_FULLFRAME = True
 
-# Monitor parameters
+# Monitor parameters (cm)
 USER_MONITOR_DISTANCE = 40.0
 MONITOR_WIDTH_CM = 39.6
 MONITOR_HEIGHT_CM = 19.42
 
-# Screen setup
+# Screen and mouse control setup
 MONITOR_WIDTH_PX, MONITOR_HEIGHT_PX = pyautogui.size()
 CENTER_X = MONITOR_WIDTH_PX // 2
 CENTER_Y = MONITOR_HEIGHT_PX // 2
@@ -281,15 +281,18 @@ def compute_coordinate_box(face_landmarks, indices, ref_matrix_container, w, h):
     return center, R_final, points_3d
 
 def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offset_yaw, calibration_offset_pitch):
+    """Convert 3D gaze direction to 2D screen coordinates"""
     reference_forward = np.array([0, 0, -1])
     avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
     
+    # Horizontal (yaw) angle
     xz_proj = np.array([avg_direction[0], 0, avg_direction[2]])
     xz_proj /= np.linalg.norm(xz_proj)
     yaw_rad = math.acos(np.clip(np.dot(reference_forward, xz_proj), -1.0, 1.0))
     if avg_direction[0] < 0:
         yaw_rad = -yaw_rad
     
+    # Vertical (pitch) angle
     yz_proj = np.array([0, avg_direction[1], avg_direction[2]])
     yz_proj /= np.linalg.norm(yz_proj)
     pitch_rad = math.acos(np.clip(np.dot(reference_forward, yz_proj), -1.0, 1.0))
@@ -299,6 +302,7 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     yaw_deg = np.degrees(yaw_rad)
     pitch_deg = np.degrees(pitch_rad)
     
+    # Convert coordinate system
     if yaw_deg < 0:
         yaw_deg = -yaw_deg
     elif yaw_deg > 0:
@@ -307,21 +311,26 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     raw_yaw_deg = yaw_deg
     raw_pitch_deg = pitch_deg
     
-    yawDegrees = 15
-    pitchDegrees = 5
+    # Degrees at which screen border is reached
+    yawDegrees = 5 * 3  # 15 degrees left or right
+    pitchDegrees = 2.0 * 2.5  # 5 degrees up or down
     
+    # Apply calibration offsets
     yaw_deg += calibration_offset_yaw
     pitch_deg += calibration_offset_pitch
     
+    # Map to screen resolution
     screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * MONITOR_WIDTH_PX)
     screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * MONITOR_HEIGHT_PX)
     
+    # Clamp to bounds
     screen_x = max(10, min(screen_x, MONITOR_WIDTH_PX - 10))
     screen_y = max(10, min(screen_y, MONITOR_HEIGHT_PX - 10))
     
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
 
 def mouse_mover():
+    """Background thread to move mouse cursor"""
     while True:
         if mouse_control_enabled:
             with mouse_lock:
@@ -329,6 +338,7 @@ def mouse_mover():
             pyautogui.moveTo(x, y)
         time.sleep(0.01)
 
+# Start mouse movement thread
 threading.Thread(target=mouse_mover, daemon=True).start()
 
 # Eye sphere tracking
@@ -342,7 +352,7 @@ right_calibration_nose_scale = None
 
 base_radius = 20
 
-print("[Info] 'c'=calibrate, 's'=screen center, F7=mouse, 'q'=quit")
+print("[Info] 'c'=calibrate eye, 's'=calibrate screen center, F7=toggle mouse, 'q'=quit")
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -358,7 +368,7 @@ while cap.isOpened():
     frame_count += 1
     now = time.time()
 
-    # TPU 얼굴 검출
+    # TPU face detection
     if tpu_interpreter is not None and (frame_count % DETECT_EVERY == 0):
         dets = tpu_face_detect_bboxes_bgr(frame)
         if dets:
@@ -366,9 +376,8 @@ while cap.isOpened():
             x0, y0, x1, y1, sc = dets[0]
             last_face_bbox = (x0, y0, x1, y1)
             last_face_time = now
-            print(f"[TPU] Face detected: score={sc:.2f}")
 
-    # ROI 결정
+    # ROI determination
     roi = (0, 0, w, h)
     run_facemesh = False
     frame_rgb = None
@@ -381,32 +390,28 @@ while cap.isOpened():
         roi_bgr = frame[y0:y1, x0:x1]
         frame_rgb = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
-        # ROI 박스 그리기
-        cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 255, 0), 2)
-        cv2.putText(frame, "ROI", (x0, y0-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 255, 0), 1)
     elif ALLOW_FALLBACK_FULLFRAME:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
 
-    # FaceMesh 실행
+    # FaceMesh processing
     results = None
     if run_facemesh and frame_rgb is not None:
         results = face_mesh.process(frame_rgb)
-        if results and results.multi_face_landmarks:
-            print(f"[FaceMesh] ✓ Detected")
 
-    # 결과 처리
+    # Process results
     face_landmarks = None
     if results and results.multi_face_landmarks:
         raw_lms = results.multi_face_landmarks[0].landmark
         face_landmarks = to_global_landmarks(raw_lms, roi, w, h)
 
-        # 헤드 좌표계 계산
+        # Compute head coordinate system
         head_center, R_final, nose_points_3d = compute_coordinate_box(
             face_landmarks, nose_indices, R_ref_nose, w, h
         )
 
-        # Iris 3D
+        # Iris 3D positions
         left_iris_idx = 468
         right_iris_idx = 473
         l = face_landmarks[left_iris_idx]
@@ -414,14 +419,14 @@ while cap.isOpened():
         iris_3d_left = np.array([l.x * w, l.y * h, l.z * w], dtype=float)
         iris_3d_right = np.array([r.x * w, r.y * h, r.z * w], dtype=float)
 
-        # 캐시 저장
+        # Cache results
         last_head_center = head_center.copy()
         last_R_final = R_final.copy()
         last_nose_points_3d = nose_points_3d.copy()
         last_iris_3d_left = iris_3d_left.copy()
         last_iris_3d_right = iris_3d_right.copy()
 
-    # Eye sphere tracking & gaze
+    # Eye sphere tracking & gaze computation
     if face_landmarks:
         # LEFT EYE
         if left_sphere_locked:
@@ -429,7 +434,6 @@ while cap.isOpened():
             scale_ratio = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
             scaled_offset = left_sphere_local_offset * scale_ratio
             sphere_world_l = head_center + R_final @ scaled_offset
-            scaled_radius_l = int(base_radius * scale_ratio)
 
         # RIGHT EYE
         if right_sphere_locked:
@@ -437,9 +441,8 @@ while cap.isOpened():
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
             scaled_offset_r = right_sphere_local_offset * scale_ratio_r
             sphere_world_r = head_center + R_final @ scaled_offset_r
-            scaled_radius_r = int(base_radius * scale_ratio_r)
 
-        # Combined gaze
+        # Combined gaze calculation
         if left_sphere_locked and right_sphere_locked:
             left_gaze_dir = iris_3d_left - sphere_world_l
             left_gaze_dir /= np.linalg.norm(left_gaze_dir)
@@ -450,45 +453,49 @@ while cap.isOpened():
             raw_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
             raw_combined_direction /= np.linalg.norm(raw_combined_direction)
 
+            # Smoothing
             combined_gaze_directions.append(raw_combined_direction)
             avg_combined_direction = np.mean(combined_gaze_directions, axis=0)
             avg_combined_direction /= np.linalg.norm(avg_combined_direction)
 
+            # Convert to screen coordinates
             screen_x, screen_y, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
                 avg_combined_direction, 
                 calibration_offset_yaw, 
                 calibration_offset_pitch
             )
 
+            # Update mouse target (thread-safe)
             if mouse_control_enabled:
                 with mouse_lock:
                     mouse_target[0] = screen_x
                     mouse_target[1] = screen_y
 
+            # Write to file
             write_screen_position(screen_x, screen_y)
             
-            # 화면 좌표 표시
-            cv2.putText(frame, f"Screen: ({screen_x}, {screen_y})", 
-                       (10, h-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            # Display coordinates
+            cv2.putText(frame, f"Gaze: ({screen_x}, {screen_y})", 
+                       (10, h-20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-    # FPS 및 상태 표시
-    status_text = []
+    # Status display
+    status = []
     if fps_ema:
-        status_text.append(f"FPS: {fps_ema:.1f}")
+        status.append(f"FPS: {fps_ema:.1f}")
     if last_face_bbox:
-        status_text.append("Face: OK")
-    if last_head_center is not None:
-        status_text.append("Mesh: OK")
+        status.append("Face:OK")
     if left_sphere_locked and right_sphere_locked:
-        status_text.append("Calib: OK")
+        status.append("Calib:OK")
+    if mouse_control_enabled:
+        status.append("Mouse:ON")
     
-    for i, text in enumerate(status_text):
-        cv2.putText(frame, text, (10, 30 + i*25), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    for i, text in enumerate(status):
+        cv2.putText(frame, text, (10, 25 + i*20), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
     cv2.imshow("Eye Tracking", frame)
 
-    # Keyboard
+    # Keyboard handling
     if keyboard.is_pressed('f7'):
         mouse_control_enabled = not mouse_control_enabled
         print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}")
@@ -499,18 +506,18 @@ while cap.isOpened():
         break
     elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
         if last_head_center is None:
-            print("[Calib] ✗ No face mesh data - wait for face detection")
+            print("[Calib] ✗ No face mesh - wait for detection")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
 
-            # LEFT
+            # LEFT eye calibration
             left_sphere_local_offset = last_R_final.T @ (last_iris_3d_left - last_head_center)
             camera_dir_world = np.array([0, 0, 1], dtype=float)
             camera_dir_local = last_R_final.T @ camera_dir_world
             left_sphere_local_offset += base_radius * camera_dir_local
             left_calibration_nose_scale = current_nose_scale
 
-            # RIGHT
+            # RIGHT eye calibration
             right_sphere_local_offset = last_R_final.T @ (last_iris_3d_right - last_head_center)
             right_sphere_local_offset += base_radius * camera_dir_local
             right_calibration_nose_scale = current_nose_scale
@@ -518,7 +525,7 @@ while cap.isOpened():
             left_sphere_locked = True
             right_sphere_locked = True
 
-            # Monitor plane
+            # Create monitor plane
             sphere_world_l_calib = last_head_center + last_R_final @ left_sphere_local_offset
             sphere_world_r_calib = last_head_center + last_R_final @ right_sphere_local_offset
 
@@ -542,12 +549,13 @@ while cap.isOpened():
                 gaze_dir=gaze_dir
             )
 
-            print("[Calibration] ✓ Complete")
+            print("[Eye Calibration] ✓ Complete")
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
         if last_head_center is None:
             print("[Screen Calib] ✗ No face")
         else:
+            # Look at screen center when pressing 's'
             current_nose_scale = compute_scale(last_nose_points_3d)
             scale_ratio_l = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
@@ -562,12 +570,13 @@ while cap.isOpened():
             if np.linalg.norm(current_combined_direction) > 1e-9:
                 current_combined_direction /= np.linalg.norm(current_combined_direction)
 
+            # Calculate offsets to center gaze
             _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
                 current_combined_direction, 0, 0
             )
             calibration_offset_yaw = -raw_yaw
             calibration_offset_pitch = -raw_pitch
-            print(f"[Screen Calibrated] ✓ Yaw: {calibration_offset_yaw:.2f}, Pitch: {calibration_offset_pitch:.2f}")
+            print(f"[Screen Calibrated] ✓ Yaw: {calibration_offset_yaw:.2f}°, Pitch: {calibration_offset_pitch:.2f}°")
 
 cap.release()
 cv2.destroyAllWindows()
