@@ -84,7 +84,7 @@ face_mesh = mp_face_mesh.FaceMesh(
 
 def init_tpu_face_detector():
     global tpu_interpreter, tpu_input_size
-    if not USE_TPU or platform.system() != "Linux":
+    if not USE_TPU_FACE or platform.system() != "Linux":
         return False
     try:
         from tflite_runtime.interpreter import Interpreter, load_delegate
