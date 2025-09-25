@@ -52,11 +52,11 @@ last_face_time = 0.0
 
 # 탐지/ROI 파라미터
 FACEMESH_EVERY = 2
-FACE_TTL = 1.0         # 최근 박스 유효시간(초)
-DETECT_EVERY = 3       # 매 N프레임마다 TPU 탐지
-DETECT_SCORE_TH = 0.6  # 탐지 임계값
+FACE_TTL = 2.0         # 최근 박스 유효시간(초)
+DETECT_EVERY = 2       # 매 N프레임마다 TPU 탐지
+DETECT_SCORE_TH = 0.5  # 탐지 임계값
 ROI_MARGIN = 0.25      # ROI 확장 비율
-ALLOW_FALLBACK_FULLFRAME = False
+ALLOW_FALLBACK_FULLFRAME = True
 
 # Customized (cm)
 USER_MONITOR_DISTANCE = 40.0
@@ -117,7 +117,7 @@ mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False,
     max_num_faces=1,
-    refine_landmarks=False, # used to be True
+    refine_landmarks=True, # used to be True
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
@@ -938,6 +938,7 @@ while cap.isOpened():
         timeit_start('tpu_detect')
         dets = tpu_face_detect_bboxes_bgr(frame)
         timeit_end('tpu_detect')
+        print(f"[TPU] dets={len(dets)}")  # ← 추가
         if dets:
             dets.sort(key=lambda x: x[4], reverse=True)
             x0, y0, x1, y1, sc = dets[0]
