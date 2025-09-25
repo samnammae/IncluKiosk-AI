@@ -31,13 +31,13 @@ tpu_input_size = None
 last_face_bbox = None
 last_face_time = 0.0
 
-# 탐지/ROI 파라미터 (최적화됨)
-FACEMESH_EVERY = 4      # 4프레임마다만 FaceMesh 실행
-FACE_TTL = 3.0          # 얼굴 박스 유효시간
-DETECT_EVERY = 8        # 8프레임마다만 TPU 탐지
-DETECT_SCORE_TH = 0.55
-ROI_MARGIN = 0.20       # ROI 확장 비율
-ALLOW_FALLBACK_FULLFRAME = False  # 풀프레임 FaceMesh 금지
+# 탐지/ROI 파라미터
+FACEMESH_EVERY = 3      # 3프레임마다 FaceMesh
+FACE_TTL = 3.0          
+DETECT_EVERY = 6        # 6프레임마다 TPU 탐지
+DETECT_SCORE_TH = 0.5   # 임계값 낮춤
+ROI_MARGIN = 0.25       
+ALLOW_FALLBACK_FULLFRAME = True  # 일단 True로
 
 # Monitor parameters
 USER_MONITOR_DISTANCE = 40.0
@@ -85,6 +85,7 @@ face_mesh = mp_face_mesh.FaceMesh(
 def init_tpu_face_detector():
     global tpu_interpreter, tpu_input_size
     if not USE_TPU_FACE or platform.system() != "Linux":
+        print("[TPU] Disabled or not Linux")
         return False
     try:
         from tflite_runtime.interpreter import Interpreter, load_delegate
@@ -95,14 +96,14 @@ def init_tpu_face_detector():
         tpu_interpreter.allocate_tensors()
         idet = tpu_interpreter.get_input_details()[0]
         tpu_input_size = (idet["shape"][1], idet["shape"][2])
-        print(f"[TPU] Ready. input={tpu_input_size}")
+        print(f"[TPU] ✓ Ready. input={tpu_input_size}")
         return True
     except Exception as e:
-        print(f"[TPU] Failed: {e}")
+        print(f"[TPU] ✗ Failed: {e}")
         tpu_interpreter = None
         return False
 
-# Camera setup - 최적화된 해상도
+# Camera setup
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -112,7 +113,7 @@ cap.set(cv2.CAP_PROP_FPS, 30)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-init_tpu_face_detector()
+tpu_ok = init_tpu_face_detector()
 frame_count = 0
 
 nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241, 
@@ -339,7 +340,9 @@ right_sphere_locked = False
 right_sphere_local_offset = None
 right_calibration_nose_scale = None
 
-print("[Info] Press 'c' to calibrate, 's' for screen center, F7 for mouse control, 'q' to quit")
+base_radius = 20
+
+print("[Info] 'c'=calibrate, 's'=screen center, F7=mouse, 'q'=quit")
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -363,6 +366,7 @@ while cap.isOpened():
             x0, y0, x1, y1, sc = dets[0]
             last_face_bbox = (x0, y0, x1, y1)
             last_face_time = now
+            print(f"[TPU] Face detected: score={sc:.2f}")
 
     # ROI 결정
     roi = (0, 0, w, h)
@@ -377,6 +381,9 @@ while cap.isOpened():
         roi_bgr = frame[y0:y1, x0:x1]
         frame_rgb = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
+        # ROI 박스 그리기
+        cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 255, 0), 2)
+        cv2.putText(frame, "ROI", (x0, y0-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     elif ALLOW_FALLBACK_FULLFRAME:
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
@@ -385,6 +392,8 @@ while cap.isOpened():
     results = None
     if run_facemesh and frame_rgb is not None:
         results = face_mesh.process(frame_rgb)
+        if results and results.multi_face_landmarks:
+            print(f"[FaceMesh] ✓ Detected")
 
     # 결과 처리
     face_landmarks = None
@@ -414,8 +423,6 @@ while cap.isOpened():
 
     # Eye sphere tracking & gaze
     if face_landmarks:
-        base_radius = 20
-
         # LEFT EYE
         if left_sphere_locked:
             current_nose_scale = compute_scale(nose_points_3d)
@@ -459,11 +466,25 @@ while cap.isOpened():
                     mouse_target[1] = screen_y
 
             write_screen_position(screen_x, screen_y)
+            
+            # 화면 좌표 표시
+            cv2.putText(frame, f"Screen: ({screen_x}, {screen_y})", 
+                       (10, h-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    # 간단한 FPS 표시
+    # FPS 및 상태 표시
+    status_text = []
     if fps_ema:
-        cv2.putText(frame, f"FPS: {fps_ema:.1f}", (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        status_text.append(f"FPS: {fps_ema:.1f}")
+    if last_face_bbox:
+        status_text.append("Face: OK")
+    if last_head_center is not None:
+        status_text.append("Mesh: OK")
+    if left_sphere_locked and right_sphere_locked:
+        status_text.append("Calib: OK")
+    
+    for i, text in enumerate(status_text):
+        cv2.putText(frame, text, (10, 30 + i*25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     cv2.imshow("Eye Tracking", frame)
 
@@ -478,7 +499,7 @@ while cap.isOpened():
         break
     elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
         if last_head_center is None:
-            print("[Calib] No face detected")
+            print("[Calib] ✗ No face mesh data - wait for face detection")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
 
@@ -521,11 +542,11 @@ while cap.isOpened():
                 gaze_dir=gaze_dir
             )
 
-            print("[Calibration] Complete")
+            print("[Calibration] ✓ Complete")
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
         if last_head_center is None:
-            print("[Screen Calib] No face")
+            print("[Screen Calib] ✗ No face")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
             scale_ratio_l = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
@@ -546,7 +567,7 @@ while cap.isOpened():
             )
             calibration_offset_yaw = -raw_yaw
             calibration_offset_pitch = -raw_pitch
-            print(f"[Screen Calibrated] Yaw: {calibration_offset_yaw:.2f}, Pitch: {calibration_offset_pitch:.2f}")
+            print(f"[Screen Calibrated] ✓ Yaw: {calibration_offset_yaw:.2f}, Pitch: {calibration_offset_pitch:.2f}")
 
 cap.release()
 cv2.destroyAllWindows()
