@@ -19,6 +19,8 @@ import queue
 
 # 기본 안내 멘트(프로젝트 명세 반영)
 DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요."
+# STT 시작 안내 사운드 기본 경로 (있으면 재생, 없으면 건너뜀)
+DEFAULT_PRE_SOUND = "start_recording.mp3"
 
 # Google Cloud SDKs
 try:
@@ -97,7 +99,7 @@ def record_until_silence(
     sample_rate: int = 16000,
     device: Optional[int] = None,
     frame_ms: int = 30,
-    silence_sec: float = 2.0,
+    silence_sec: float = 4.0,
     max_total_sec: float = 15.0,
     calib_sec: float = 0.4,
     sensitivity: float = 2.0,
@@ -160,7 +162,6 @@ def record_until_silence(
                     speech_started = True
                     frames.append(block)
                 else:
-                    # 발화 전에는 버퍼를 모으지 않음 (원하면 pre-roll 구현 가능)
                     continue
             else:
                 frames.append(block)
@@ -178,7 +179,6 @@ def record_until_silence(
             return None
 
         audio = np.concatenate(frames, axis=0)
-        # 1D int16로 보장
         if audio.ndim > 1:
             audio = audio.reshape(-1,)
 
@@ -210,6 +210,23 @@ def _play_audio_file(path: str) -> None:
             print("[TTS] 경고: aplay가 없어 재생을 생략합니다. (파일만 생성됨)")
     else:
         print("[TTS] 알 수 없는 포맷, 재생 생략:", path)
+
+
+def _play_if_exists(path: Optional[str], pause_after: float = 0.25) -> None:
+    """
+    파일이 존재하면 재생하고, 약간의 지연 후 리턴.
+    - pause_after: 재생 직후 마이크 입력이 섞이지 않도록 대기 (초)
+    """
+    if not path:
+        return
+    if os.path.isfile(path):
+        print(f"[SND] 프리사운드 재생: {path}")
+        _play_audio_file(path)
+        if pause_after > 0:
+            time.sleep(pause_after)
+    else:
+        # 조용히 건너뜀
+        print(f"[SND] 프리사운드 없음(건너뜀): {path}")
 
 
 # =========================
@@ -300,15 +317,21 @@ def stt_once(
     calib_sec: float = 0.4,
     sensitivity: float = 2.0,
     min_speech_sec: float = 0.3,
+    pre_sound: Optional[str] = DEFAULT_PRE_SOUND,  # ★ STT 시작 전 재생할 사운드 경로
+    pre_sound_pause: float = 0.25,                 # ★ 재생 직후 대기(초)
 ) -> str:
     """
     STT 단발 인식:
     - mode="auto": 사용자가 말하는 동안만 녹음하고 침묵이 지속되면 자동 종료
       * 최대 길이: max_duration(미지정 시 duration 값)
     - mode="fixed": duration초 만큼 고정 녹음
+    - pre_sound: STT 시작 직전에 재생할 파일 경로(mp3/wav). 파일이 없으면 조용히 건너뜀.
     """
     if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
         print("[STT] 경고: GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다.", file=sys.stderr)
+
+    # ★ STT 시작 직전 프리 사운드 재생(있으면)
+    _play_if_exists(pre_sound, pause_after=pre_sound_pause)
 
     wav_path = None
     try:
@@ -391,6 +414,8 @@ def _cli():
     p_stt.add_argument("--max", type=float, default=None, help="auto: 최대 녹음 시간(초)")
     p_stt.add_argument("--calib", type=float, default=0.4, help="auto: 주변소음 기준 측정(초)")
     p_stt.add_argument("--sens", type=float, default=2.0, help="auto: 민감도(높을수록 더 큰 소리에만 반응)")
+    p_stt.add_argument("--presnd", type=str, default=DEFAULT_PRE_SOUND, help="STT 시작 전 재생할 파일 경로")
+    p_stt.add_argument("--presnd_pause", type=float, default=0.25, help="프리사운드 재생 후 대기(초)")
 
     p_list = sub.add_parser("list", help="입력 장치 나열")
 
@@ -421,6 +446,8 @@ def _cli():
             max_duration=args.max,
             calib_sec=args.calib,
             sensitivity=args.sens,
+            pre_sound=args.presnd,
+            pre_sound_pause=args.presnd_pause,
         )
         print(json.dumps({"ok": True, "text": text}, ensure_ascii=False))
     elif args.cmd == "list":
