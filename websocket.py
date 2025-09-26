@@ -130,14 +130,14 @@ async def handle_client(websocket):
                 # CASE 2-4, CASE 3: 모드선택 진입
                 # (아이트래킹/주먹감지 준비는 별도 워커로 확장 가능)
                 subprocess.Popen([PYTHON, "-c", "print('MODE_SELECT stub')"])
-                await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
+                # await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
 
             # ===== 모드 선택 → 대화/일반/눈 =====
             elif msg_type == "CHAT_ORDER_ON":
                 # CASE 4-1/4-2: 대화주문 진입
                 # 1) 감지 코드 정지 (필요 시 워커 종료)
                 subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
-                await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
+                # await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
 
                 # 2) 안내 TTS 자동 재생 (message가 없으면 기본 멘트)
                 guide_text = msg_text if (isinstance(msg_text, str) and msg_text.strip()) else DEFAULT_CHAT_GUIDE
@@ -145,6 +145,7 @@ async def handle_client(websocket):
                 try:
                     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None))
                 except Exception as e:
+                    print("error in chat")
                     await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
                 else:
                     # 재생 종료 통지 → 프론트는 여기서 STT_ON 시작
@@ -153,12 +154,12 @@ async def handle_client(websocket):
             elif msg_type == "NORMAL_ORDER_ON":
                 # CASE 4-3
                 subprocess.Popen([PYTHON, "-c", "print('NORMAL_ORDER stub')"])
-                await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
+                # await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
             elif msg_type == "EYE_ORDER_ON":
                 # CASE 4-4
                 subprocess.Popen([PYTHON, "-c", "print('EYE_ORDER stub')"])
-                await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
+                # await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
             # ===== 대화주문 중 TTS/STT =====
             elif msg_type == "TTS_ON":
