@@ -97,7 +97,7 @@ def record_until_silence(
     sample_rate: int = 16000,
     device: Optional[int] = None,
     frame_ms: int = 30,
-    silence_sec: float = 0.8,
+    silence_sec: float = 2.0,
     max_total_sec: float = 15.0,
     calib_sec: float = 0.4,
     sensitivity: float = 2.0,
