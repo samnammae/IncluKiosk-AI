@@ -145,7 +145,7 @@ async def handle_client(websocket):
                 try:
                     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None))
                 except Exception as e:
-                    print("error in chat: {e}")
+                    print(f"error in chat: {e}")
                     await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
                 else:
                     # 재생 종료 통지 → 프론트는 여기서 STT_ON 시작
