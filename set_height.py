@@ -8,7 +8,7 @@ CAM_INDEX = 0
 FRAME_W, FRAME_H = 640, 480        # RPi면 640x480 또는 480x360 권장
 FDETECT_MODEL = 0                  # 0: short-range(가까운 얼굴), 1: full-range
 MIN_DET_CONF = 0.6
-DEADBAND_PCT = 0.04                # 중앙에서 ±4%면 '중앙'으로 간주
+DEADBAND_PCT = 0.06               # 중앙에서 ±4%면 '중앙'으로 간주
 EMA_ALPHA = 0.3                    # 0.2~0.4 정도 추천
 STABLE_FRAMES = 10                 # 중앙 유지 프레임 수(n)
 PRINT_EVERY = 0.15                 # 메시지 너무 자주 안 찍게(초)
@@ -84,22 +84,22 @@ def main():
                     else:
                         print(f"Centered… ({stable_count}/{STABLE_FRAMES})")
                 elif state == "up":
-                    print("Go up!")     # 얼굴이 화면 아래 -> 카메라를 위로 이동
+                    print("Face above camera! Go down")  # 얼굴이 화면 아래 -> 카메라를 위로 이동
                 elif state == "down":
-                    print("Go down!")   # 얼굴이 화면 위 -> 카메라를 아래로 이동
+                    print("Face below camera! Go up")   # 얼굴이 화면 위 -> 카메라를 아래로 이동
                 elif state == "no-face":
                     print("No face detected. Move camera up/down to find a face…")
                 last_print_t = now
                 last_state = state
 
             # 디버그용 가이드 라인(원하면 주석 해제)
-            # cv2.line(frame, (0, int(FRAME_H*0.5)), (FRAME_W, int(FRAME_H*0.5)), (0,255,0), 1)
-            # if ema_y is not None:
-            #     y_px = int(ema_y * FRAME_H)
-            #     cv2.line(frame, (0, y_px), (FRAME_W, y_px), (255,0,0), 1)
-            # cv2.imshow("guide", frame)
-            # if cv2.waitKey(1) & 0xFF == 27:  # ESC to quit
-            #     break
+            cv2.line(frame, (0, int(FRAME_H*0.5)), (FRAME_W, int(FRAME_H*0.5)), (0,255,0), 1)
+            if ema_y is not None:
+                y_px = int(ema_y * FRAME_H)
+                cv2.line(frame, (0, y_px), (FRAME_W, y_px), (255,0,0), 1)
+            cv2.imshow("guide", frame)
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC to quit
+                 break
 
     except KeyboardInterrupt:
         pass
