@@ -9,12 +9,12 @@ CAM_INDEX = 0
 FRAME_W, FRAME_H = 640, 480
 FDETECT_MODEL = 0
 MIN_DET_CONF = 0.6
-DEADBAND_PCT = 0.06
+DEADBAND_PCT = 0.06 # range of center
 EMA_ALPHA = 0.3
 STABLE_FRAMES = 10
 PRINT_EVERY = 0.15
 
-# EdgeTPU person detector 모델/라벨 (Coral 공식 COCO SSD MobileNet v2 예시)
+# EdgeTPU person detector 모델/라벨
 EDGETPU_MODEL = "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite"
 EDGETPU_LABELS = "coco_labels.txt"
 PERSON_LABEL = "person"
@@ -26,41 +26,72 @@ mp_face = mp.solutions.face_detection
 def load_labels(path):
     labels = {}
     with open(path, 'r', encoding='utf-8') as f:
-        for line in f:
-            pair = line.strip().split(maxsplit=1)
-            if len(pair) == 2:
-                labels[int(pair[0])] = pair[1].strip()
-            else:
-                labels[len(labels)] = pair[0].strip()
+        for idx, raw in enumerate(f):
+            line = raw.strip()
+            if not line:
+                continue
+            # 1) "0 person" / "0: person" 처리
+            if ':' in line and line.split(':', 1)[0].strip().isdigit():
+                k, v = line.split(':', 1)
+                labels[int(k.strip())] = v.strip()
+                continue
+            parts = line.split()
+            if parts and parts[0].isdigit():
+                labels[int(parts[0])] = ' '.join(parts[1:]) if len(parts) > 1 else str(parts[0])
+                continue
+            # 2) "person" 처럼 이름만 있는 줄 → 그 줄 번호가 id
+            labels[idx] = line
     return labels
 
+
 def detect_person_bbox(interpreter, labels, bgr):
+    # 1) 원본 크기
+    H, W = bgr.shape[:2]
+
+    # 2) RGB 변환
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    # 입력 크기에 맞춰 리사이즈 & 세팅
-    _, scale = common.set_resized_input(
-        interpreter, rgb.shape[1], rgb.shape[0], lambda size: cv2.resize(rgb, size)
-    )
+
+    # 3) 모델 입력 크기 구해서 리사이즈
+    in_w, in_h = common.input_size(interpreter)[:2]  # (width, height[, channels])
+    resized = cv2.resize(rgb, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
+
+    # 4) 텐서 설정 & 추론
+    common.set_input(interpreter, resized)
     interpreter.invoke()
+
+    # 5) 감지 결과 받기
     objs = detect.get_objects(interpreter, score_threshold=PERSON_SCORE_TH)
-    # 가장 큰 person 박스 하나만 반환
-    H, W = rgb.shape[:2]
+
+    # 6) 입력텐서 좌표계 → 원본 프레임 좌표계로 역스케일
+    x_scale = in_w / W
+    y_scale = in_h / H
+
     best = None
-    best_area = -1
+    best_area = -1.0
     for o in objs:
-        cls = labels.get(o.id, str(o.id))
-        if cls != PERSON_LABEL:
+        name = labels.get(o.id, str(o.id)).lower()
+        if name != "person":
             continue
-        # bbox는 모델 입력 좌표 기준 → 원본 스케일로 복원
-        bbox = o.bbox  # (x, y, w, h) in input space
-        x0 = int(bbox.xmin / scale[0]); y0 = int(bbox.ymin / scale[1])
-        x1 = int((bbox.xmin + bbox.width) / scale[0]); y1 = int((bbox.ymin + bbox.height) / scale[1])
-        # 정규화(0~1)
-        x0n = max(0, min(1, x0 / W)); x1n = max(0, min(1, x1 / W))
-        y0n = max(0, min(1, y0 / H)); y1n = max(0, min(1, y1 / H))
+
+        # pycoral bbox는 입력텐서 기준 절대좌표
+        bb = o.bbox  # has xmin, ymin, width, height
+
+        x0 = int(bb.xmin / x_scale)
+        y0 = int(bb.ymin / y_scale)
+        x1 = int((bb.xmin + bb.width)  / x_scale)
+        y1 = int((bb.ymin + bb.height) / y_scale)
+
+        # 정규화 [0,1]
+        x0n = max(0.0, min(1.0, x0 / W))
+        y0n = max(0.0, min(1.0, y0 / H))
+        x1n = max(0.0, min(1.0, x1 / W))
+        y1n = max(0.0, min(1.0, y1 / H))
+
         area = (x1n - x0n) * (y1n - y0n)
         if area > best_area:
             best_area = area
             best = (x0n, y0n, x1n, y1n)
+
     return best  # (x0, y0, x1, y1) in [0,1] or None
 
 def main():
