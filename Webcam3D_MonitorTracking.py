@@ -12,6 +12,39 @@ import keyboard
 import platform
 from types import SimpleNamespace
 from collections import defaultdict
+import asyncio
+import websockets
+import json
+import sys
+import numpy as np
+
+WS_URL = "ws://127.0.0.1:8765"  # websocket.py 서버 주소
+
+
+async def send_chat_order_on():
+    try:
+        async with websockets.connect(WS_URL) as ws:
+            payload = {"type": "CHAT_ORDER_ON"}
+            await ws.send(json.dumps(payload, ensure_ascii=False))
+            await asyncio.sleep(0.05)  # (선택) ACK 대기
+    except Exception as e:
+        print(f"[WS] 전송 실패: {e}")
+
+def notify_frontend_and_exit():
+    try:
+        asyncio.run(send_chat_order_on())
+    except Exception as e:
+        print(f"[WS] asyncio 전송 오류: {e}")
+    try:
+        cap.release()
+    except:
+        pass
+    try:
+        cv2.destroyAllWindows()
+    except:
+        pass
+    sys.exit(0)
+
 
 # --- FaceMesh 최근 결과 캐시 (캘리브레이션/키 입력 시 사용) ---
 last_head_center = None
@@ -121,6 +154,48 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
+
+# Initialize MediaPipe Hands
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    static_image_mode=False,
+    model_complexity=0,
+    max_num_hands=2,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
+hand_last_state = False   # 직전 프레임이 '주먹'인지
+last_fist_time = 0.0
+FIST_COOLDOWN = 0.6       # 초 (연속 오동작 방지)
+
+def _lm_xy(hand_landmarks, idx, w, h):
+    lm = hand_landmarks.landmark[idx]
+    return np.array([lm.x * w, lm.y * h], dtype=float)
+
+def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
+    tip   = _lm_xy(hand_landmarks, tip_idx, w, h)
+    pip   = _lm_xy(hand_landmarks, pip_idx, w, h)
+    wrist = _lm_xy(hand_landmarks, wrist_idx, w, h)
+    # 손목과의 상대 거리: tip이 pip보다 손목에 더 가까우면 '접힘'
+    return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
+
+def is_thumb_curled(hand_landmarks, w, h):
+    wrist = _lm_xy(hand_landmarks, 0, w, h)
+    tip   = _lm_xy(hand_landmarks, 4, w, h)   # 엄지 tip
+    mcp   = _lm_xy(hand_landmarks, 2, w, h)   # 엄지 MCP
+    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist)
+
+def is_fist(hand_landmarks, w, h):
+    # 검(8,6), 중(12,10), 약(16,14), 소(20,18) + 엄지
+    curled = 0
+    curled += int(is_finger_curled(hand_landmarks, 8,  6,  0, w, h))
+    curled += int(is_finger_curled(hand_landmarks, 12, 10, 0, w, h))
+    curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h))
+    curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h))
+    curled += int(is_thumb_curled(hand_landmarks, w, h))
+    return curled >= 4  # 다섯 손가락 중 4개 이상 접히면 '주먹'
+
 
 def init_tpu_face_detector():
     """EdgeTPU 얼굴검출 모델 초기화. 성공시 True."""
@@ -970,6 +1045,35 @@ while cap.isOpened():
             frame_rgb = None
             run_facemesh = False
 
+    # 주먹 인식 파트
+    # frame: 현재 BGR 프레임, w/h: 캡처 해상도
+    if frame_count % 2 == 0:  # 성능을 위해 2프레임마다 처리
+        hands_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        hand_results = hands.process(hands_rgb)
+
+        curr_fist = False
+        if hand_results.multi_hand_landmarks:
+            for hlm in hand_results.multi_hand_landmarks:
+                # 주먹 판별
+                if is_fist(hlm, w, h):
+                    curr_fist = True
+                # (선택) 시각화
+                mp.solutions.drawing_utils.draw_landmarks(
+                    frame, hlm, mp_hands.HAND_CONNECTIONS
+                )
+
+        # 리징엣지에서 클릭(혹은 트리거) + 쿨다운
+        now = time.time()
+        if curr_fist and (not hand_last_state) and (now - last_fist_time > FIST_COOLDOWN):
+            # 1) 먼저 상태 갱신/표시
+            last_fist_time = now
+            cv2.putText(frame, "FIST -> CHAT_ORDER_ON", (10, 120),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            # 2) 그리고 WS 전송 + 자원해제 + 종료
+            notify_frontend_and_exit()  # 내부에서 sys.exit(0) 호출
+            # 여기 아래 코드는 실행되지 않음
+        hand_last_state = curr_fist
+
     # (3) FaceMesh 수행 (계측)
     results = None
     ran_facemesh = False
@@ -1048,8 +1152,6 @@ while cap.isOpened():
             monitor_normal=monitor_normal_w,
             gaze_markers=gaze_markers
         )
-
-
 
     if face_landmarks:
         # face_landmarks = results.multi_face_landmarks[0].landmark
@@ -1227,8 +1329,6 @@ while cap.isOpened():
         f"Frame {w}x{h} | ROI {roi_str}{cpu_ram}",
     ]
     draw_hud(frame, hud_lines, org=(10, 24), line_h=20)
-
-
 
     cv2.imshow("Integrated Eye Tracking", frame)
 
