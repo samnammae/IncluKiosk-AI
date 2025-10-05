@@ -47,6 +47,16 @@ except Exception as e:
     ) from e
 
 # =========================
+# 공용 유틸
+# =========================
+def _mask_secret(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    if len(s) <= 8:
+        return "*" * len(s)
+    return f"{s[:4]}{'*'*(len(s)-8)}{s[-4:]}"
+
+# =========================
 # Naver Clova Speech Recognition (CSR) helper
 # =========================
 def _lang_google_to_naver(language_code: str) -> str:
@@ -98,7 +108,15 @@ def _stt_naver_csr_from_wav(
     with open(wav_path, "rb") as f:
         data = f.read()
 
+    # ===== 디버깅: CSR 호출 정보 (비밀키 마스킹) =====
+    print(f"[STT][NAVER] POST {url}")
+    print(f"[STT][NAVER] KEY-ID={_mask_secret(key_id)}  KEY={_mask_secret(key)} (masked)")
+    print(f"[STT][NAVER] Upload bytes={len(data)}  file={wav_path}")
+
+    t0 = time.time()
     resp = requests.post(url, headers=headers, data=data, timeout=timeout)
+    elapsed = (time.time() - t0) * 1000.0
+    print(f"[STT][NAVER] HTTP {resp.status_code} {resp.reason} in {elapsed:.1f} ms  content-type={resp.headers.get('Content-Type')}")
     resp.raise_for_status()
 
     # JSON 우선 시도
@@ -107,12 +125,13 @@ def _stt_naver_csr_from_wav(
         j = resp.json()
         # 일반적으로 {"text": "..."} 형태
         text = j.get("text", "")
+        print(f"[STT][NAVER] JSON parsed: {text[:120]!r}{'...' if len(text)>120 else ''}")
     except Exception:
         # JSON이 아니면 평문으로 처리
         text = resp.text.strip()
+        print(f"[STT][NAVER] Plain parsed: {text[:120]!r}{'...' if len(text)>120 else ''}")
 
     return text or ""
-
 
 
 # =========================
@@ -174,6 +193,7 @@ def record_audio(duration: int = 5, sample_rate: int = 16000, channels: int = 1,
     tmpdir = tempfile.mkdtemp(prefix="stt_rec_")
     wav_path = os.path.join(tmpdir, "input.wav")
     wav_write(wav_path, sample_rate, audio)
+    print(f"[STT] (fixed) WAV saved: {wav_path}  bytes={os.path.getsize(wav_path)}")
     return wav_path
 
 
@@ -181,11 +201,11 @@ def record_until_silence(
     sample_rate: int = 16000,
     device: Optional[int] = None,
     frame_ms: int = 30,
-    silence_sec: float = 4.0,
-    max_total_sec: float = 15.0,
+    silence_sec: float = 1.2,       # ★ 침묵 시간 기본값: 더 길게(기존 0.8 → 1.2 권장값으로 동기화)
+    max_total_sec: float = 60.0,    # ★ 최대 녹음 시간 1분
     calib_sec: float = 0.4,
     sensitivity: float = 2.0,
-    min_speech_sec: float = 0.3,
+    min_speech_sec: float = 0.2,    # ★ 짧은 발화 허용(기존 0.3 → 0.2)
 ) -> Optional[str]:
     """
     사용자가 말하는 동안 녹음하고, 침묵(silence_sec)이 지속되면 자동 종료.
@@ -231,7 +251,8 @@ def record_until_silence(
 
         while True:
             # 총 길이 상한
-            if (time.time() - t0) > max_total_sec:
+            elapsed = time.time() - t0
+            if elapsed > max_total_sec:
                 print("[STT] max_total_sec 도달로 종료")
                 break
 
@@ -243,17 +264,24 @@ def record_until_silence(
                 if is_voice:
                     speech_started = True
                     frames.append(block)
+                    print(f"[STT] ▶ 발화 시작 (t={elapsed:.2f}s, amp={amp:.1f})")
                 else:
                     continue
             else:
                 frames.append(block)
                 if is_voice:
+                    if consecutive_silence > 0:
+                        print(f"[STT] 발성 재개 (consecutive_silence reset, {consecutive_silence} frames)")
                     consecutive_silence = 0
                 else:
                     consecutive_silence += 1
+                    if consecutive_silence % 10 == 0:
+                        sec = consecutive_silence * frame_ms / 1000.0
+                        print(f"[STT] ...침묵 누적 {sec:.2f}s / 필요 {silence_sec:.2f}s")
+
                     # 최소 발화 시간 보장 + 침묵 종료
                     if consecutive_silence >= silence_frames_needed and len(frames) >= min_speech_frames:
-                        print("[STT] 침묵 지속으로 종료")
+                        print("[STT] ◀ 침묵 지속으로 종료")
                         break
 
         if not frames:
@@ -267,6 +295,9 @@ def record_until_silence(
         tmpdir = tempfile.mkdtemp(prefix="stt_rec_")
         wav_path = os.path.join(tmpdir, "input.wav")
         wav_write(wav_path, sample_rate, audio.astype(np.int16))
+
+        dur = len(audio) / float(sample_rate)
+        print(f"[STT] (auto) WAV saved: {wav_path}  dur={dur:.2f}s  bytes={os.path.getsize(wav_path)}")
         return wav_path
 
 
@@ -396,13 +427,14 @@ def _stt_google_from_wav(wav_path: str, sample_rate: int, language_code: str) ->
         audio_channel_count=1,
         enable_automatic_punctuation=True,
     )
-    print("[STT] 인식 요청 전송...(Google)")
+    print("[STT][GOOGLE] recognize() 호출")
     resp = client.recognize(config=config, audio=audio_msg)
-    print("[STT] 인식 응답 수신(Google)")
+    print("[STT][GOOGLE] 응답 수신")
     if not resp.results:
         return ""
-    return resp.results[0].alternatives[0].transcript
-
+    text = resp.results[0].alternatives[0].transcript
+    print(f"[STT][GOOGLE] Text: {text[:120]!r}{'...' if len(text)>120 else ''}")
+    return text
 
 
 # =========================
@@ -410,30 +442,30 @@ def _stt_google_from_wav(wav_path: str, sample_rate: int, language_code: str) ->
 # =========================
 def stt_once(
     mode: str = "auto",           # "auto": 침묵기반 자동종료, "fixed": 고정길이
-    duration: int = 5,            # mode="auto"일 때는 '최대' 총 녹음시간으로 사용
+    duration: int = 60,           # ★ 기본 최대 길이(초) 1분 (auto에서 max_duration 미지정 시 사용)
     sample_rate: int = 16000,
     language_code: str = "ko-KR",
     device: Optional[int] = None,
-    silence_sec: float = 0.8,
-    max_duration: Optional[float] = None,  # None이면 duration 사용
+    silence_sec: float = 1.2,     # ★ 침묵 종료 임계(초) - 좀 더 길게
+    max_duration: Optional[float] = 60.0,  # ★ auto: 최대 녹음 시간(초) 기본 1분
     calib_sec: float = 0.4,
     sensitivity: float = 2.0,
-    min_speech_sec: float = 0.3,
-    pre_sound: Optional[str] = DEFAULT_PRE_SOUND,  # ★ STT 시작 전 재생할 사운드 경로
-    pre_sound_pause: float = 0.25,   # ★ 재생 직후 대기(초)
-    engine: str = None,              
+    min_speech_sec: float = 0.2,  # ★ 짧은 발화 허용
+    pre_sound: Optional[str] = DEFAULT_PRE_SOUND,  # STT 시작 전 재생할 사운드 경로
+    pre_sound_pause: float = 0.25,                 # 재생 직후 대기(초)
+    engine: str = None,
 ) -> str:
     """
     STT 단발 인식:
     - mode="auto": 사용자가 말하는 동안만 녹음하고 침묵이 지속되면 자동 종료
-      * 최대 길이: max_duration(미지정 시 duration 값)
+      * 최대 길이: max_duration(미지정 시 duration 값) -> 기본 60초
     - mode="fixed": duration초 만큼 고정 녹음
-    - pre_sound: STT 시작 직전에 재생할 파일 경로(mp3/wav). 파일이 없으면 조용히 건너뜀.
     """
     # ★ 엔진 결정 (우선순위: 인자 > 환경변수 > 기본 'google')
     eng = (engine or os.environ.get("STT_ENGINE") or "google").lower()
     if eng not in ("google", "naver"):
         eng = "google"
+    print(f"[STT] Engine selected = {eng}  (mode={mode}, sr={sample_rate}, lang={language_code})")
 
     if eng == "google" and "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
         print("[STT] 경고: GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다.", file=sys.stderr)
@@ -443,9 +475,11 @@ def stt_once(
     wav_path = None
     try:
         if mode == "fixed":
+            print(f"[STT] mode=fixed  duration={duration}s  device={device}")
             wav_path = record_audio(duration=duration, sample_rate=sample_rate, channels=1, device=device)
         else:
             total_cap = float(max_duration if max_duration is not None else duration)
+            print(f"[STT] mode=auto  silence_sec={silence_sec}s  min_speech_sec={min_speech_sec}s  max_total={total_cap}s  device={device}")
             wav_path = record_until_silence(
                 sample_rate=sample_rate,
                 device=device,
@@ -457,20 +491,25 @@ def stt_once(
                 min_speech_sec=min_speech_sec,
             )
             if wav_path is None:
+                print("[STT] 음성 감지 실패 → 빈 문자열 반환")
                 return ""
 
+        # ===== 엔진 분기 =====
         if eng == "naver":
             print("[STT] Naver CSR로 인식 요청 전송...")
             text = _stt_naver_csr_from_wav(wav_path, language_code=language_code)
             print("[STT] 인식 응답 수신(Naver CSR)")
-            return text
         else:
-            return _stt_google_from_wav(wav_path, sample_rate, language_code)
+            text = _stt_google_from_wav(wav_path, sample_rate, language_code)
+
+        print(f"[STT] 최종 텍스트 길이: {len(text)} chars")
+        return text
 
     except Exception as e:
         print(f"[STT] 오류: {e}", file=sys.stderr)
         return ""
     finally:
+        # 임시 파일 정리
         try:
             if wav_path:
                 base = os.path.dirname(wav_path)
@@ -478,8 +517,9 @@ def stt_once(
                     os.remove(wav_path)
                 if os.path.isdir(base):
                     os.rmdir(base)
-        except Exception:
-            pass
+                print(f"[STT] 임시 파일/폴더 정리 완료: {wav_path}")
+        except Exception as ce:
+            print(f"[STT] 임시 파일 정리 중 예외: {ce}", file=sys.stderr)
 
 
 # =========================
@@ -502,20 +542,18 @@ def _cli():
 
     p_stt = sub.add_parser("stt", help="마이크로 녹음 후 인식")
     p_stt.add_argument("--mode", type=str, default="auto", choices=["auto", "fixed"], help="녹음 모드")
-    p_stt.add_argument("--duration", type=int, default=5, help="fixed: 길이(초) / auto: 최대 길이(초)")
+    p_stt.add_argument("--duration", type=int, default=60, help="fixed: 길이(초) / auto: 기본 최대 길이(초)")
     p_stt.add_argument("--sr", type=int, default=16000, help="샘플레이트")
     p_stt.add_argument("--lang", type=str, default="ko-KR", help="인식 언어 코드")
     p_stt.add_argument("--device", type=int, default=None, help="입력 장치 인덱스 (미지정 시 자동)")
-    p_stt.add_argument("--silence", type=float, default=0.8, help="auto: 침묵 종료 임계(초)")
-    p_stt.add_argument("--max", type=float, default=None, help="auto: 최대 녹음 시간(초)")
+    p_stt.add_argument("--silence", type=float, default=1.2, help="auto: 침묵 종료 임계(초)")
+    p_stt.add_argument("--max", type=float, default=60.0, help="auto: 최대 녹음 시간(초)")
     p_stt.add_argument("--calib", type=float, default=0.4, help="auto: 주변소음 기준 측정(초)")
     p_stt.add_argument("--sens", type=float, default=2.0, help="auto: 민감도(높을수록 더 큰 소리에만 반응)")
     p_stt.add_argument("--presnd", type=str, default=DEFAULT_PRE_SOUND, help="STT 시작 전 재생할 파일 경로")
     p_stt.add_argument("--presnd_pause", type=float, default=0.25, help="프리사운드 재생 후 대기(초)")
-    # _cli() 내부, p_stt 정의 부분에 옵션 추가
     p_stt.add_argument("--engine", type=str, default=None, choices=["google", "naver"],
                    help="STT 엔진 선택 (google|naver). 미지정 시 환경변수 STT_ENGINE 또는 기본 google")
-
 
     p_list = sub.add_parser("list", help="입력 장치 나열")
 
@@ -536,6 +574,7 @@ def _cli():
         device = args.device
         if device is None:
             device = find_input_device_index()
+            print(f"[STT] auto-selected input device index: {device}")
         text = stt_once(
             mode=args.mode,
             duration=args.duration,
