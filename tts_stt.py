@@ -576,18 +576,19 @@ def _cli():
             device = find_input_device_index()
             print(f"[STT] auto-selected input device index: {device}")
         text = stt_once(
-            mode=args.mode,
-            duration=args.duration,
-            sample_rate=args.sr,
-            language_code=args.lang,
+            mode="auto",               # 필요시 그대로 auto
+            duration=60,               # auto 모드에서 기본 상한으로도 사용
+            sample_rate=args.sr,       # 샘플레이트는 인자 그대로
+            language_code=args.lang,   # 언어도 인자 그대로
             device=device,
-            silence_sec=args.silence,
-            max_duration=args.max,
+            silence_sec=1.2,           # ★ 침묵 더 길게
+            max_duration=60.0,         # ★ 최대 1분
             calib_sec=args.calib,
             sensitivity=args.sens,
+            min_speech_sec=0.2,        # ★ 짧은 발화 허용
             pre_sound=args.presnd,
             pre_sound_pause=args.presnd_pause,
-            engine=args.engine,
+            engine="naver",            # ★ CSR 강제
         )
         print(json.dumps({"ok": True, "text": text}, ensure_ascii=False))
     elif args.cmd == "list":
