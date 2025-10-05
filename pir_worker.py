@@ -36,7 +36,7 @@ async def send_pir_off():
     """서버에 'worker' 소스로 PIR_OFF 전송 (서버는 프론트로 브로드캐스트)."""
     try:
         async with websockets.connect(SERVER_URI) as ws:
-            await ws.send(json.dumps({"type": "PIR_OFF", "source": "worker"}))
+            await ws.send(json.dumps({"type": "PIR_DETECTED", "source": "worker"}))
         print(f"[PIR] Sent PIR_OFF(source=worker) to {SERVER_URI}", flush=True)
     except Exception as e:
         print(f"[PIR] Failed to send PIR_OFF: {e}", flush=True)
