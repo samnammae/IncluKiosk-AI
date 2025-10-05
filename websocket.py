@@ -166,7 +166,7 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "STT_ON":
-                duration = int(data.get("duration", 7))         # auto모드에서 '최대' 시간
+                duration = int(data.get("duration", 60))         # auto모드에서 '최대' 시간
                 sample_rate = int(data.get("sampleRate", 16000))
                 language_code = data.get("languageCode", "ko-KR")
                 device_idx = data.get("deviceIndex", None)
@@ -192,7 +192,7 @@ async def handle_client(websocket):
                             sample_rate=sample_rate,
                             language_code=language_code,
                             device=device_idx,
-                            silence_sec=float(data.get("silence", 0.8)),
+                            silence_sec=float(data.get("silence", 2.0)),
                             max_duration=float(data.get("maxDuration", duration)),
                             calib_sec=float(data.get("calib", 0.4)),
                             sensitivity=float(data.get("sensitivity", 2.0)),
