@@ -1,0 +1,33 @@
+# === Core numeric/vision ===
+numpy==2.0.2
+scipy==1.13.1
+opencv-contrib-python==4.12.0.88
+Pillow==11.3.0
+matplotlib==3.9.4
+
+# === MediaPipe (FaceMesh) ===
+mediapipe==0.10.9
+protobuf==3.20.3
+absl-py==2.3.1
+attrs==25.3.0
+sounddevice==0.5.2
+
+# === EdgeTPU / TFLite ===
+tflite-runtime==2.13.0
+
+# === System utils / performance ===
+psutil==7.1.0
+
+# === GUI / input control ===
+pyautogui==0.9.54
+python3-Xlib==0.15
+keyboard==0.13.5
+
+# === GPIO / WebSocket ===
+RPi.GPIO==0.7.1
+websockets==14.1
+
+# === Audio + Google Cloud TTS/STT ===
+pyaudio==0.2.14
+google-cloud-texttospeech==2.31.0
+google-cloud-speech==2.33.0
