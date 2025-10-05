@@ -4,6 +4,11 @@ import mediapipe as mp
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.adapters import common, detect
 
+from linear_actuator.linear_actuator_controller import (
+    init_motor,
+    cleanup_motor,moveUp, moveDown
+)
+
 # ====== 설정 ======
 CAM_INDEX = 0
 FRAME_W, FRAME_H = 640, 480
@@ -95,6 +100,9 @@ def detect_person_bbox(interpreter, labels, bgr):
     return best  # (x0, y0, x1, y1) in [0,1] or None
 
 def main():
+
+    init_motor()    # GPIO 세팅 및 리니어 엑추에이터 모터 활성화 
+
     # 카메라
     cap = cv2.VideoCapture(CAM_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
@@ -143,22 +151,27 @@ def main():
                     state = "center"; stable_count += 1
                 elif diff < 0:
                     state = "up";     stable_count = 0   # 얼굴이 중앙보다 위 → 카메라 내려야
+                    moveUp(10)    #엑추에이터 위로 이동
                 else:
                     state = "down";   stable_count = 0   # 얼굴이 중앙보다 아래 → 카메라 올려야
+                    moveDown(10)     #엑추에이터 아래로 이동 10이면 10스텝, 100이면 100스텝
             else:
                 # 얼굴 없음 → EdgeTPU 사람 박스로 힌트
                 person = detect_person_bbox(interpreter, labels, frame)
                 stable_count = 0
                 if person is None:
                     state = "hint_down"   # 화면에 사람 박스도 없으면 카메라가 너무 위일 확률↑ → 아래로 스캔
+                    moveDown(200) # 엑추에이터 아래로 이동
                 else:
                     x0, y0, x1, y1 = person
                     y_center = (y0 + y1) * 0.5
                     # 경계 접촉이면 방향 확신 강화
                     if y0 <= 0.05:
                         state = "hint_up"     # 상단에 걸림 → 키 큼 → 카메라 위로
+                        moveUp(100)    #엑추에이터 위로 이동
                     elif y1 >= 0.95:
                         state = "hint_down"   # 하단에 걸림 → 키 작음 → 카메라 아래로
+                        moveDown(100) #엑추에이터 아래로 이동
                     else:
                         # 중앙 기준으로 간단 판정
                         state = "up" if y_center < target_y - deadband else "down"
@@ -199,6 +212,7 @@ def main():
         cap.release()
         face_det.close()
         # cv2.destroyAllWindows()
+        cleanup_motor()         # GPIO 정리 및 리니어 엑추에이터 모터 정리
 
 if __name__ == "__main__":
     main()
