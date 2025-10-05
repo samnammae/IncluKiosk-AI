@@ -9,6 +9,9 @@ from functools import partial
 
 from tts_stt import tts_play, stt_once, tts_guide_default, find_input_device_index
 
+from linear_actuator.linear_actuator_controller import on_shutdown
+import atexit
+
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_worker.py")
@@ -17,6 +20,7 @@ workers = {"PIR": None}
 clients = set()
 
 USE_ACK = False  # 필요 없으면 False
+atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어엑추에이터 높이 낮추기
 
 async def send_json(ws, payload: dict):
     try:
