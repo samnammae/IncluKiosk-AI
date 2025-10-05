@@ -4,6 +4,18 @@
 # - tts_play(text, lang="ko-KR", voice=..., speaking_rate=1.0, pitch=0.0)
 # - stt_once(mode="auto", duration=5, sample_rate=16000, language_code="ko-KR", device=None, ...)
 # --------------------------------------------
+
+"""
+# Naver Cloud 인증정보
+export NAVER_CSR_KEY_ID=네이버_액세스키_ID        # X-NCP-APIGW-API-KEY-ID
+export NAVER_CSR_KEY=네이버_액세스키_시크릿      # X-NCP-APIGW-API-KEY
+
+# (선택) 언어/엔드포인트
+export NAVER_CSR_LANG=Kor  # Kor|Eng|Jpn|Chn (기본: 언어코드로 자동매핑)
+export NAVER_CSR_URL=https://naveropenapi.apigw.ntruss.com/recog/v1/stt
+
+"""
+
 import os
 import sys
 import json
@@ -16,6 +28,8 @@ import numpy as np
 import sounddevice as sd
 from scipy.io.wavfile import write as wav_write
 import queue
+
+import requests
 
 # 기본 안내 멘트(프로젝트 명세 반영)
 DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요."
@@ -31,6 +45,74 @@ except Exception as e:
         "google-cloud-texttospeech, google-cloud-speech 패키지를 설치하세요.\n"
         "pip install google-cloud-texttospeech google-cloud-speech"
     ) from e
+
+# =========================
+# Naver Clova Speech Recognition (CSR) helper
+# =========================
+def _lang_google_to_naver(language_code: str) -> str:
+    """
+    'ko-KR' -> 'Kor', 'en-US' -> 'Eng', 'ja-JP' -> 'Jpn', 'zh' -> 'Chn'
+    NAVER_CSR_LANG 환경변수가 있으면 그것을 우선 사용.
+    """
+    env_lang = os.environ.get("NAVER_CSR_LANG")
+    if env_lang:
+        return env_lang
+
+    lc = (language_code or "").lower()
+    if lc.startswith("ko"):
+        return "Kor"
+    if lc.startswith("en"):
+        return "Eng"
+    if lc.startswith("ja") or lc.startswith("jp"):
+        return "Jpn"
+    if lc.startswith("zh") or "cn" in lc:
+        return "Chn"
+    # 기본값
+    return "Kor"
+
+
+def _stt_naver_csr_from_wav(
+    wav_path: str,
+    language_code: str = "ko-KR",
+    timeout: float = 30.0,
+) -> str:
+    """
+    네이버 CSR REST API로 WAV(16kHz, mono, 16-bit) 파일을 전송해 텍스트를 얻는다.
+    응답은 JSON({"text": "..."})) 또는 평문 텍스트일 수 있으므로 모두 대응.
+    """
+    key_id = os.environ.get("NAVER_CSR_KEY_ID")
+    key = os.environ.get("NAVER_CSR_KEY")
+    if not key_id or not key:
+        raise RuntimeError("NAVER_CSR_KEY_ID / NAVER_CSR_KEY 환경변수가 필요합니다.")
+
+    base_url = os.environ.get("NAVER_CSR_URL", "https://naveropenapi.apigw.ntruss.com/recog/v1/stt")
+    lang = _lang_google_to_naver(language_code)
+
+    url = f"{base_url}?lang={lang}"
+    headers = {
+        "X-NCP-APIGW-API-KEY-ID": key_id,
+        "X-NCP-APIGW-API-KEY": key,
+        "Content-Type": "application/octet-stream",
+    }
+
+    with open(wav_path, "rb") as f:
+        data = f.read()
+
+    resp = requests.post(url, headers=headers, data=data, timeout=timeout)
+    resp.raise_for_status()
+
+    # JSON 우선 시도
+    text = ""
+    try:
+        j = resp.json()
+        # 일반적으로 {"text": "..."} 형태
+        text = j.get("text", "")
+    except Exception:
+        # JSON이 아니면 평문으로 처리
+        text = resp.text.strip()
+
+    return text or ""
+
 
 
 # =========================
@@ -302,6 +384,26 @@ def tts_guide_default(text: str = DEFAULT_CHAT_GUIDE, lang: str = "ko-KR", voice
     """
     return tts_play(text=text, lang=lang, voice=voice)
 
+def _stt_google_from_wav(wav_path: str, sample_rate: int, language_code: str) -> str:
+    client = speech.SpeechClient()
+    with open(wav_path, "rb") as f:
+        content = f.read()
+    audio_msg = speech.RecognitionAudio(content=content)
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=sample_rate,
+        language_code=language_code,
+        audio_channel_count=1,
+        enable_automatic_punctuation=True,
+    )
+    print("[STT] 인식 요청 전송...(Google)")
+    resp = client.recognize(config=config, audio=audio_msg)
+    print("[STT] 인식 응답 수신(Google)")
+    if not resp.results:
+        return ""
+    return resp.results[0].alternatives[0].transcript
+
+
 
 # =========================
 # STT
@@ -318,7 +420,8 @@ def stt_once(
     sensitivity: float = 2.0,
     min_speech_sec: float = 0.3,
     pre_sound: Optional[str] = DEFAULT_PRE_SOUND,  # ★ STT 시작 전 재생할 사운드 경로
-    pre_sound_pause: float = 0.25,                 # ★ 재생 직후 대기(초)
+    pre_sound_pause: float = 0.25,   # ★ 재생 직후 대기(초)
+    engine: str = None,              
 ) -> str:
     """
     STT 단발 인식:
@@ -327,10 +430,14 @@ def stt_once(
     - mode="fixed": duration초 만큼 고정 녹음
     - pre_sound: STT 시작 직전에 재생할 파일 경로(mp3/wav). 파일이 없으면 조용히 건너뜀.
     """
-    if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
+    # ★ 엔진 결정 (우선순위: 인자 > 환경변수 > 기본 'google')
+    eng = (engine or os.environ.get("STT_ENGINE") or "google").lower()
+    if eng not in ("google", "naver"):
+        eng = "google"
+
+    if eng == "google" and "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
         print("[STT] 경고: GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다.", file=sys.stderr)
 
-    # ★ STT 시작 직전 프리 사운드 재생(있으면)
     _play_if_exists(pre_sound, pause_after=pre_sound_pause)
 
     wav_path = None
@@ -350,31 +457,20 @@ def stt_once(
                 min_speech_sec=min_speech_sec,
             )
             if wav_path is None:
-                # 음성 감지 실패: 빈 문자열 반환
                 return ""
 
-        client = speech.SpeechClient()
-        with open(wav_path, "rb") as f:
-            content = f.read()
-        audio_msg = speech.RecognitionAudio(content=content)
-        config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=sample_rate,
-            language_code=language_code,
-            audio_channel_count=1,
-            enable_automatic_punctuation=True,
-        )
-        print("[STT] 인식 요청 전송...")
-        resp = client.recognize(config=config, audio=audio_msg)
-        print("[STT] 인식 응답 수신")
-        if not resp.results:
-            return ""
-        return resp.results[0].alternatives[0].transcript
+        if eng == "naver":
+            print("[STT] Naver CSR로 인식 요청 전송...")
+            text = _stt_naver_csr_from_wav(wav_path, language_code=language_code)
+            print("[STT] 인식 응답 수신(Naver CSR)")
+            return text
+        else:
+            return _stt_google_from_wav(wav_path, sample_rate, language_code)
+
     except Exception as e:
         print(f"[STT] 오류: {e}", file=sys.stderr)
         return ""
     finally:
-        # 임시 파일 정리
         try:
             if wav_path:
                 base = os.path.dirname(wav_path)
@@ -416,6 +512,10 @@ def _cli():
     p_stt.add_argument("--sens", type=float, default=2.0, help="auto: 민감도(높을수록 더 큰 소리에만 반응)")
     p_stt.add_argument("--presnd", type=str, default=DEFAULT_PRE_SOUND, help="STT 시작 전 재생할 파일 경로")
     p_stt.add_argument("--presnd_pause", type=float, default=0.25, help="프리사운드 재생 후 대기(초)")
+    # _cli() 내부, p_stt 정의 부분에 옵션 추가
+    p_stt.add_argument("--engine", type=str, default=None, choices=["google", "naver"],
+                   help="STT 엔진 선택 (google|naver). 미지정 시 환경변수 STT_ENGINE 또는 기본 google")
+
 
     p_list = sub.add_parser("list", help="입력 장치 나열")
 
@@ -448,6 +548,7 @@ def _cli():
             sensitivity=args.sens,
             pre_sound=args.presnd,
             pre_sound_pause=args.presnd_pause,
+            engine=args.engine,
         )
         print(json.dumps({"ok": True, "text": text}, ensure_ascii=False))
     elif args.cmd == "list":
