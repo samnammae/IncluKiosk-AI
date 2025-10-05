@@ -1,4 +1,6 @@
-# Linear Actuator Control - Max Step Measurement (정리된 버전)
+"""
+작동 확인 및 MAX_STEP 찾기 위한 테스트 코드 
+"""
 from time import sleep
 import RPi.GPIO as GPIO
 
