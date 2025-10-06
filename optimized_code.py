@@ -276,20 +276,48 @@ def tpu_face_detect_bboxes_bgr(frame_bgr):
     outs = tpu_interpreter.get_output_details()
     tensors = [tpu_interpreter.get_tensor(o["index"]) for o in outs]
 
+    # 디버깅: 모든 출력 텐서 확인
+    if DEBUG and frame_count % 60 == 0:
+        print("\n[TPU Debug] === Output Analysis ===")
+        print(f"[TPU Debug] Number of output tensors: {len(tensors)}")
+        for i, t in enumerate(tensors):
+            print(f"[TPU Debug] Tensor {i}:")
+            print(f"  Shape: {t.shape}")
+            print(f"  Dtype: {t.dtype}")
+            print(f"  Min: {t.min():.4f}, Max: {t.max():.4f}, Mean: {t.mean():.4f}")
+            if len(t.shape) <= 2:
+                print(f"  First 10 values: {t.flatten()[:10]}")
+
     boxes = None
     scores = None
     for t in tensors:
         s = t.shape
         if len(s) == 3 and s[2] == 4:
             boxes = t[0]
+            if DEBUG and frame_count % 60 == 0:
+                print(f"[TPU Debug] Found BOXES tensor: shape={s}")
         elif len(s) == 2 and s[0] == 1:
             scores = t[0]
+            if DEBUG and frame_count % 60 == 0:
+                print(f"[TPU Debug] Found SCORES tensor: shape={s}")
+                print(f"[TPU Debug] Top 5 scores: {np.sort(scores)[-5:][::-1]}")
 
     if boxes is None or scores is None:
+        if DEBUG and frame_count % 60 == 0:
+            print(f"[TPU Debug] ERROR: boxes={boxes is not None}, scores={scores is not None}")
         return []
 
     bboxes = []
     N = min(len(scores), len(boxes))
+    
+    # 임계값 관계없이 최고 점수 확인
+    if DEBUG and frame_count % 60 == 0:
+        max_idx = np.argmax(scores)
+        max_score = scores[max_idx]
+        print(f"[TPU Debug] Best detection: idx={max_idx}, score={max_score:.4f}, threshold={DETECT_SCORE_TH}")
+        if max_score < DETECT_SCORE_TH:
+            print(f"[TPU Debug] Best score is BELOW threshold - no detection possible!")
+    
     for i in range(N):
         sc = float(scores[i])
         if sc < DETECT_SCORE_TH:
