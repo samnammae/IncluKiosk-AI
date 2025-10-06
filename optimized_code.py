@@ -62,17 +62,17 @@ tpu_input_size = None
 last_face_bbox = None
 last_face_time = 0.0
 
-# ⚡ 최적화된 파라미터
-FACEMESH_EVERY = 4       # 3→4 (부드러운 감소)
+# 최적화된 파라미터
+FACEMESH_EVERY = 4
 FACE_TTL = 3.0          
-DETECT_EVERY = 5         # 6→5 (초기 검출 빠르게)
-DETECT_SCORE_TH = 0.45   # 0.5→0.45 (검출 민감도 증가)
-ROI_MARGIN = 0.25        # 원래대로 복구
-ALLOW_FALLBACK_FULLFRAME = True  # ⚠️ True로 복구! (중요)
+DETECT_EVERY = 5
+DETECT_SCORE_TH = 0.30   # ⭐ 0.45 → 0.30으로 인하
+ROI_MARGIN = 0.25
+ALLOW_FALLBACK_FULLFRAME = True
 
 # Hand detection 최적화
-HAND_EVERY = 4           # 2→4로 적절히 감소
-HAND_ROI_SCALE = 1.5     
+HAND_EVERY = 4
+HAND_ROI_SCALE = 1.5
 
 # Monitor parameters
 USER_MONITOR_DISTANCE = 40.0
@@ -107,8 +107,8 @@ combined_gaze_directions = deque(maxlen=filter_length)
 # Reference matrices
 R_ref_nose = [None]
 
-# 🔍 디버깅 플래그
-DEBUG = True  # False로 설정하면 디버그 메시지 끄기
+# 디버깅 플래그
+DEBUG = True
 
 # MediaPipe FaceMesh
 mp_face_mesh = mp.solutions.face_mesh
@@ -435,8 +435,9 @@ base_radius = 20
 print("[Info] 'c'=calibrate, 's'=screen center, F7=mouse, 'q'=quit")
 print(f"[Settings] FaceMesh every {FACEMESH_EVERY}, Hand every {HAND_EVERY}, TPU every {DETECT_EVERY}")
 print(f"[Settings] Fallback fullframe: {ALLOW_FALLBACK_FULLFRAME}")
+print(f"[Settings] TPU threshold: {DETECT_SCORE_TH}")
 
-# 🔍 성능 모니터링
+# 성능 모니터링
 perf_counters = defaultdict(list)
 last_perf_print = time.time()
 
@@ -455,7 +456,7 @@ while cap.isOpened():
     frame_count += 1
     now = time.time()
 
-    # 🔍 TPU 얼굴 검출
+    # TPU 얼굴 검출
     tpu_start = time.perf_counter()
     if tpu_interpreter is not None and (frame_count % DETECT_EVERY == 0):
         dets = tpu_face_detect_bboxes_bgr(frame)
@@ -465,9 +466,10 @@ while cap.isOpened():
             last_face_bbox = (x0, y0, x1, y1)
             last_face_time = now
             if DEBUG and frame_count % 30 == 0:
-                print(f"[TPU] Face detected: score={sc:.2f}, bbox={last_face_bbox}")
-        elif DEBUG and frame_count % 30 == 0:
-            print(f"[TPU] No face detected")
+                print(f"[TPU] ✓ Face detected: score={sc:.2f}, bbox={last_face_bbox}")
+        else:
+            if DEBUG and frame_count % 30 == 0:
+                print(f"[TPU] ✗ No face detected (threshold={DETECT_SCORE_TH})")
     perf_counters['tpu'].append((time.perf_counter() - tpu_start) * 1000)
 
     # ROI 결정
@@ -492,31 +494,40 @@ while cap.isOpened():
         if DEBUG and frame_count % 30 == 0:
             print(f"[FALLBACK] Using full frame for FaceMesh")
 
-    # 🔍 Hand detection
+    # ⭐ Hand detection - roi_valid 무관하게 실행
     hand_start = time.perf_counter()
-    if roi_valid and (frame_count % HAND_EVERY == 0):
-        hx0, hy0, hx1, hy1 = expand_and_clip_bbox(last_face_bbox, HAND_ROI_SCALE, w, h)
-        hand_roi_bgr = frame[hy0:hy1, hx0:hx1]
-        hands_rgb = cv2.cvtColor(hand_roi_bgr, cv2.COLOR_BGR2RGB)
+    if frame_count % HAND_EVERY == 0:
+        # ROI가 있으면 확장된 영역 사용, 없으면 전체 프레임 사용
+        if roi_valid:
+            hx0, hy0, hx1, hy1 = expand_and_clip_bbox(last_face_bbox, HAND_ROI_SCALE, w, h)
+            hand_roi_bgr = frame[hy0:hy1, hx0:hx1]
+            hands_rgb = cv2.cvtColor(hand_roi_bgr, cv2.COLOR_BGR2RGB)
+            hand_w, hand_h = hx1 - hx0, hy1 - hy0
+        else:
+            # Fallback: 전체 프레임 사용
+            hands_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            hand_w, hand_h = w, h
+        
         hand_results = hands.process(hands_rgb)
 
         curr_fist = False
         if hand_results.multi_hand_landmarks:
             for hlm in hand_results.multi_hand_landmarks:
-                rw = hx1 - hx0
-                rh = hy1 - hy0
-                if is_fist(hlm, rw, rh):
+                if is_fist(hlm, hand_w, hand_h):
                     curr_fist = True
+                    if DEBUG and frame_count % 30 == 0:
+                        print(f"[Hand] ✓ Fist detected!")
 
         if curr_fist and (not hand_last_state) and (now - last_fist_time > FIST_COOLDOWN):
             last_fist_time = now
+            print("[Hand] FIST TRIGGER -> Sending CHAT_ORDER_ON")
             cv2.putText(frame, "FIST -> CHAT_ORDER_ON", (10, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             notify_frontend_and_exit()
         hand_last_state = curr_fist
     perf_counters['hand'].append((time.perf_counter() - hand_start) * 1000)
 
-    # 🔍 FaceMesh 실행
+    # FaceMesh 실행
     facemesh_start = time.perf_counter()
     results = None
     if run_facemesh and frame_rgb is not None:
@@ -623,7 +634,7 @@ while cap.isOpened():
         cv2.putText(frame, text, (10, 30 + i*25), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-    # 🔍 성능 통계 출력 (5초마다)
+    # 성능 통계 출력 (5초마다)
     if DEBUG and (now - last_perf_print > 5.0):
         print("\n=== Performance Stats ===")
         for key, times in perf_counters.items():
