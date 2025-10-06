@@ -147,6 +147,28 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
             # === 대화주문 중 TTS/STT ===
+            elif msg_type == "TTS_ON":
+                text  = data.get("message") or data.get("text") or ""
+                if not str(text).strip():
+                    await send_json(websocket, {"type": "TTS_ERROR", "message": "Missing TTS text"})
+                    continue
+                lang  = data.get("lang", "ko-KR")
+                voice = data.get("voice", None)
+                rate  = float(data.get("speakingRate", 1.0))
+                pitch = float(data.get("pitch", 0.0))
+                enc   = data.get("audioEncoding", "LINEAR16")
+
+                loop = asyncio.get_running_loop()
+                try:
+                    print(f"[TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
+                    await loop.run_in_executor(None, partial(tts_play, text, lang, voice, rate, pitch, None, enc))
+                except Exception as e:
+                    print(f"[TTS] 오류: {e}", file=sys.stderr)
+                    await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
+                else:
+                    print("[TTS] 응답 종료 → TTS_OFF 전송")
+                    await send_json(websocket, {"type": "TTS_OFF"})
+
             elif msg_type == "STT_ON":
                 duration = int(data.get("duration", 60))
                 sample_rate = int(data.get("sampleRate", 16000))
@@ -176,12 +198,10 @@ async def handle_client(websocket):
                 # ⭐ 동기 함수를 비동기 환경에서 실행하기 위한 래퍼
                 def run_stt_with_error():
                     """STT 실행 + 오류 처리 (동기 버전)"""
-                    from tts_stt import stt_once_with_error_handling
+                    from tts_stt import stt_once_with_error_handling, DEFAULT_ERROR_GUIDE
                     
                     # 콜백을 동기적으로 실행하기 위한 헬퍼
                     def sync_error_callback():
-                        # asyncio.run()을 사용하면 nested loop 오류 발생 가능
-                        # 대신 future를 사용하여 메인 루프에 예약
                         future = asyncio.run_coroutine_threadsafe(
                             notify_stt_error(), 
                             loop
@@ -198,7 +218,7 @@ async def handle_client(websocket):
                     return stt_once_with_error_handling(
                         on_error_callback=sync_error_callback,
                         on_error_end_callback=sync_error_end_callback,
-                        error_guide_text=DEFAULT_CHAT_GUIDE.replace("음성으로 주문을 도와드릴게요", "말씀을 정확히 인식하지 못했습니다. 다시 한번 말씀해 주시겠어요"),
+                        error_guide_text=DEFAULT_ERROR_GUIDE,  # ⭐ 직접 사용
                         error_guide_lang=language_code,
                         mode="auto",
                         duration=duration,
@@ -210,7 +230,7 @@ async def handle_client(websocket):
                         calib_sec=float(data.get("calib", 0.4)),
                         sensitivity=float(data.get("sensitivity", 2.0)),
                         min_speech_sec=float(data.get("minSpeech", 0.2)),
-                        engine="naver"  # ⭐ Naver CSR 사용
+                        engine="naver"
                     )
 
                 loop = asyncio.get_running_loop()
@@ -219,55 +239,13 @@ async def handle_client(websocket):
                     transcript, success = await loop.run_in_executor(None, run_stt_with_error)
                     
                     if success:
-                        # ⭐ 성공 시에만 STT_OFF 전송
                         print(f"[STT] 성공 결과: \"{transcript}\"")
                         await send_json(websocket, {"type": "STT_OFF", "message": transcript})
                     else:
-                        # ⭐ 실패 시에는 이미 STT_ERR → 오류안내TTS → ERR_END 전송 완료
-                        # 추가 메시지 불필요 (프론트가 ERR_END 받으면 STT_ON 재전송)
                         print("[STT] 실패 처리 완료 (프론트 대기 중)")
                         
                 except Exception as e:
                     print(f"[STT] 예외 발생: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
-
-            elif msg_type == "STT_ON":
-                duration = int(data.get("duration", 60))         # auto모드에서 '최대' 시간
-                sample_rate = int(data.get("sampleRate", 16000))
-                language_code = data.get("languageCode", "ko-KR")
-                device_idx = data.get("deviceIndex", None)
-
-                # 장치 자동 탐색(Respeaker 키워드 매칭)
-                if device_idx is None:
-                    device_idx = find_input_device_index()
-                    print(f"[STT] deviceIndex 자동 선택: {device_idx}")
-
-                if device_idx is None:
-                    await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
-                    continue
-
-                loop = asyncio.get_running_loop()
-                try:
-                    print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
-                    transcript = await loop.run_in_executor(
-                        None,
-                        partial(
-                            stt_once,
-                            mode="auto",
-                            duration=duration,
-                            sample_rate=sample_rate,
-                            language_code=language_code,
-                            device=device_idx,
-                            silence_sec=float(data.get("silence", 2.0)),
-                            max_duration=float(data.get("maxDuration", duration)),
-                            calib_sec=float(data.get("calib", 0.4)),
-                            sensitivity=float(data.get("sensitivity", 2.0)),
-                        ),
-                    )
-                    print(f"[STT] 결과: \"{transcript}\"")
-                    await send_json(websocket, {"type": "STT_OFF", "message": transcript})
-                except Exception as e:
-                    print(f"[STT] 오류: {e}", file=sys.stderr)
                     await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
 
             elif msg_type == "ALL_RESET":
