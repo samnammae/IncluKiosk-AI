@@ -12,7 +12,14 @@ from tts_stt import (
     find_input_device_index,
     stt_once_with_error_handling,
     DEFAULT_CHAT_GUIDE,
-    DEFAULT_ERROR_GUIDE
+    DEFAULT_ERROR_GUIDE,
+    STT_SILENCE_SEC,
+    STT_MAX_DURATION,
+    STT_CALIB_SEC,
+    STT_SENSITIVITY,
+    STT_MIN_SPEECH_SEC,
+    STT_ENGINE,
+    STT_SAMPLE_RATE
 )
 
 from linear_actuator.linear_actuator_controller import on_shutdown
@@ -174,8 +181,8 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "STT_ON":
-                duration = int(data.get("duration", 60))
-                sample_rate = int(data.get("sampleRate", 16000))
+                duration = int(data.get("duration", STT_MAX_DURATION))
+                sample_rate = int(data.get("sampleRate", STT_SAMPLE_RATE))
                 language_code = data.get("languageCode", "ko-KR")
                 device_idx = data.get("deviceIndex", None)
 
@@ -188,7 +195,7 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
                     continue
 
-                # ⭐ 오류 처리 콜백 정의
+                # 오류 처리 콜백 정의
                 async def notify_stt_error():
                     """STT 오류 발생 시 프론트에 알림"""
                     print("[WebSocket] STT_ERR 전송")
@@ -216,12 +223,12 @@ async def handle_client(websocket):
                         sample_rate=sample_rate,
                         language_code=language_code,
                         device=device_idx,
-                        silence_sec=float(data.get("silence", 1.2)),
-                        max_duration=float(data.get("maxDuration", duration)),
-                        calib_sec=float(data.get("calib", 0.4)),
-                        sensitivity=float(data.get("sensitivity", 2.0)),
-                        min_speech_sec=float(data.get("minSpeech", 0.2)),
-                        engine="naver"
+                        silence_sec=float(data.get("silence", STT_SILENCE_SEC)),
+                        max_duration=float(data.get("maxDuration", STT_MAX_DURATION)),
+                        calib_sec=float(data.get("calib", STT_CALIB_SEC)),
+                        sensitivity=float(data.get("sensitivity", STT_SENSITIVITY)),
+                        min_speech_sec=float(data.get("minSpeech", STT_MIN_SPEECH_SEC)),
+                        engine=data.get("engine", STT_ENGINE)
                     )
 
                 loop = asyncio.get_running_loop()

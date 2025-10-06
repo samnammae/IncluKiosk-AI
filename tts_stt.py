@@ -18,6 +18,15 @@ DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요
 DEFAULT_ERROR_GUIDE = "죄송합니다, 말씀을 정확히 인식하지 못했습니다. 다시 한번 말씀해 주시겠어요?" # 오류 안내 멘트
 DEFAULT_PRE_SOUND = "start_recording.mp3" # STT 시작 안내 사운드 기본 경로
 
+STT_SILENCE_SEC = 1.2        # 침묵 종료 임계(초)
+STT_MAX_DURATION = 60.0      # 최대 녹음 시간(초)
+STT_CALIB_SEC = 0.4          # 주변소음 측정 시간(초)
+STT_SENSITIVITY = 2.0        # 음성 감지 민감도
+STT_MIN_SPEECH_SEC = 0.2     # 최소 발화 시간(초)
+STT_ENGINE = "naver"         # 기본 STT 엔진
+STT_SAMPLE_RATE = 16000      # 1초에 음성 몇번 녹음? (네이버 추천 값)
+STT_PRE_SOUND_PAUSE = 0.25   # 프리 사운드 후 대기 시간
+
 # Google Cloud SDKs
 try:
     from google.cloud import texttospeech
@@ -88,11 +97,6 @@ def _stt_naver_csr_from_wav(
 
     with open(wav_path, "rb") as f:
         data = f.read()
-
-    # ===== 디버깅: CSR 호출 정보 (비밀키 마스킹) =====
-    print(f"[STT][NAVER] POST {url}")
-    print(f"[STT][NAVER] KEY-ID={_mask_secret(key_id)}  KEY={_mask_secret(key)} (masked)")
-    print(f"[STT][NAVER] Upload bytes={len(data)}  file={wav_path}")
 
     t0 = time.time()
     resp = requests.post(url, headers=headers, data=data, timeout=timeout)
@@ -179,14 +183,14 @@ def record_audio(duration: int = 5, sample_rate: int = 16000, channels: int = 1,
 
 
 def record_until_silence(
-    sample_rate: int = 16000,
+    sample_rate: int = STT_SAMPLE_RATE,
     device: Optional[int] = None,   # 반환: 임시 WAV 파일 경로 (없으면 None)
     frame_ms: int = 30,             # 프레임 길이(ms) (30~40ms 권장)
-    silence_sec: float = 1.2,       # 침묵 시간
-    max_total_sec: float = 60.0,    # 최대 녹음 시간
-    calib_sec: float = 0.4,         # 시작 전 주변소음 기준치 측정 시간
-    sensitivity: float = 2.0,       # sensitivity 보다 크면 발성으로 판단
-    min_speech_sec: float = 0.2,    # 최소 발화 시간
+    silence_sec: float = STT_SILENCE_SEC,       # 침묵 시간
+    max_total_sec: float = STT_MAX_DURATION,    # 최대 녹음 시간
+    calib_sec: float = STT_CALIB_SEC,         # 시작 전 주변소음 기준치 측정 시간
+    sensitivity: float = STT_SENSITIVITY,       # sensitivity 보다 크면 발성으로 판단
+    min_speech_sec: float = STT_MIN_SPEECH_SEC,    # 최소 발화 시간
 ) -> Optional[str]:
     
     frames_per_block = max(1, int(sample_rate * frame_ms / 1000))
@@ -405,18 +409,18 @@ def _stt_google_from_wav(wav_path: str, sample_rate: int, language_code: str) ->
 # STT
 # =========================
 def stt_once(
-    mode: str = "auto",           # "auto": 침묵기반 자동종료, "fixed": 고정길이
-    duration: int = 60,           # ★ 기본 최대 길이(초) 1분 (auto에서 max_duration 미지정 시 사용)
-    sample_rate: int = 16000,
+    mode: str = "auto",
+    duration: int = 60,
+    sample_rate: int = STT_SAMPLE_RATE,  
     language_code: str = "ko-KR",
     device: Optional[int] = None,
-    silence_sec: float = 1.2,     # ★ 침묵 종료 임계(초) - 좀 더 길게
-    max_duration: Optional[float] = 60.0,  # ★ auto: 최대 녹음 시간(초) 기본 1분
-    calib_sec: float = 0.4,
-    sensitivity: float = 2.0,
-    min_speech_sec: float = 0.2,  # ★ 짧은 발화 허용
-    pre_sound: Optional[str] = DEFAULT_PRE_SOUND,  # STT 시작 전 재생할 사운드 경로
-    pre_sound_pause: float = 0.25,                 # 재생 직후 대기(초)
+    silence_sec: float = STT_SILENCE_SEC,         
+    max_duration: Optional[float] = STT_MAX_DURATION, 
+    calib_sec: float = STT_CALIB_SEC,           
+    sensitivity: float = STT_SENSITIVITY,       
+    min_speech_sec: float = STT_MIN_SPEECH_SEC,  
+    pre_sound: Optional[str] = DEFAULT_PRE_SOUND,
+    pre_sound_pause: float = STT_PRE_SOUND_PAUSE,
     engine: str = None,
 ) -> str:
     """
