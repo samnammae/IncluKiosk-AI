@@ -26,6 +26,7 @@ STT_MIN_SPEECH_SEC = 0.2     # 최소 발화 시간(초)
 STT_ENGINE = "naver"         # 기본 STT 엔진
 STT_SAMPLE_RATE = 16000      # 1초에 음성 몇번 녹음? (네이버 추천 값)
 STT_PRE_SOUND_PAUSE = 0.25   # 프리 사운드 후 대기 시간
+STT_INITIAL_SILENCE_TIMEOUT = 5.0  # 처음부터 말이 없으면 5초 후 종료
 
 # Google Cloud SDKs
 try:
@@ -191,6 +192,7 @@ def record_until_silence(
     calib_sec: float = STT_CALIB_SEC,         # 시작 전 주변소음 기준치 측정 시간
     sensitivity: float = STT_SENSITIVITY,       # sensitivity 보다 크면 발성으로 판단
     min_speech_sec: float = STT_MIN_SPEECH_SEC,    # 최소 발화 시간
+    initial_silence_timeout: float = STT_INITIAL_SILENCE_TIMEOUT 
 ) -> Optional[str]:
     
     frames_per_block = max(1, int(sample_rate * frame_ms / 1000))
@@ -223,6 +225,8 @@ def record_until_silence(
         silence_frames_needed = max(1, int(silence_sec * 1000 / frame_ms))
         min_speech_frames = max(1, int(min_speech_sec * 1000 / frame_ms))
         consecutive_silence = 0
+        initial_silence_frames = 0
+        initial_silence_limit = max(1, int(initial_silence_timeout * 1000 / frame_ms))
         t0 = time.time()
 
         while True:
@@ -242,6 +246,10 @@ def record_until_silence(
                     frames.append(block)
                     print(f"[STT] ▶ 발화 시작 (t={elapsed:.2f}s, amp={amp:.1f})")
                 else:
+                    initial_silence_frames += 1
+                    if initial_silence_frames >= initial_silence_limit:
+                        print(f"[STT] ✖ 초기 침묵 {initial_silence_timeout:.1f}초 도달 → 음성 없음으로 종료")
+                        return None
                     continue
             else:
                 frames.append(block)
@@ -422,6 +430,7 @@ def stt_once(
     pre_sound: Optional[str] = DEFAULT_PRE_SOUND,
     pre_sound_pause: float = STT_PRE_SOUND_PAUSE,
     engine: str = None,
+    initial_silence_timeout: float = STT_INITIAL_SILENCE_TIMEOUT, 
 ) -> str:
     """
     STT 단발 인식:
@@ -457,6 +466,7 @@ def stt_once(
                 calib_sec=calib_sec,
                 sensitivity=sensitivity,
                 min_speech_sec=min_speech_sec,
+                initial_silence_timeout=initial_silence_timeout
             )
             if wav_path is None:
                 print("[STT] 음성 감지 실패 → 빈 문자열 반환")
