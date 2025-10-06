@@ -7,7 +7,13 @@ from pathlib import Path
 import os
 from functools import partial
 
-from tts_stt import tts_play, stt_once, tts_guide_default, find_input_device_index
+from tts_stt import (
+    tts_play, 
+    find_input_device_index,
+    stt_once_with_error_handling,
+    DEFAULT_CHAT_GUIDE,
+    DEFAULT_ERROR_GUIDE
+)
 
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
@@ -73,8 +79,6 @@ async def stop_pir(websocket):
 async def clear_pir_state_and_notify_frontend():
     workers["PIR"] = None
     await broadcast_json({"type": "PIR_OFF"})
-
-DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요."
 
 async def handle_client(websocket):
     print("클라이언트 연결됨")
@@ -195,30 +199,17 @@ async def handle_client(websocket):
                     print("[WebSocket] ERR_END 전송")
                     await send_json(websocket, {"type": "ERR_END"})
 
-                # ⭐ 동기 함수를 비동기 환경에서 실행하기 위한 래퍼
                 def run_stt_with_error():
-                    """STT 실행 + 오류 처리 (동기 버전)"""
-                    from tts_stt import stt_once_with_error_handling, DEFAULT_ERROR_GUIDE
-                    
-                    # 콜백을 동기적으로 실행하기 위한 헬퍼
-                    def sync_error_callback():
-                        future = asyncio.run_coroutine_threadsafe(
-                            notify_stt_error(), 
-                            loop
-                        )
-                        future.result(timeout=5)
-                    
-                    def sync_error_end_callback():
-                        future = asyncio.run_coroutine_threadsafe(
-                            notify_error_end(), 
-                            loop
-                        )
+                    """STT 실행 + 오류 처리"""                    
+                    # 비동기 콜백을 동기로 변환
+                    def sync_callback(coro):
+                        future = asyncio.run_coroutine_threadsafe(coro, loop)
                         future.result(timeout=5)
                     
                     return stt_once_with_error_handling(
-                        on_error_callback=sync_error_callback,
-                        on_error_end_callback=sync_error_end_callback,
-                        error_guide_text=DEFAULT_ERROR_GUIDE,  # ⭐ 직접 사용
+                        on_error_callback=lambda: sync_callback(notify_stt_error()),
+                        on_error_end_callback=lambda: sync_callback(notify_error_end()),
+                        error_guide_text=DEFAULT_ERROR_GUIDE,
                         error_guide_lang=language_code,
                         mode="auto",
                         duration=duration,

@@ -1,13 +1,3 @@
-"""
-# Naver Cloud 인증정보
-export NAVER_CSR_KEY_ID=네이버_액세스키_ID        # X-NCP-APIGW-API-KEY-ID
-export NAVER_CSR_KEY=네이버_액세스키_시크릿      # X-NCP-APIGW-API-KEY
-
-export NAVER_CSR_LANG=Kor  # Kor|Eng|Jpn|Chn (기본: 언어코드로 자동매핑)
-export NAVER_CSR_URL=https://naveropenapi.apigw.ntruss.com/recog/v1/stt
-
-"""
-
 import os
 import sys
 import json
@@ -389,10 +379,6 @@ def tts_play(
     _play_audio_file(out_path)
     return out_path
 
-# 기본 안내 멘트 재생
-def tts_guide_default(text: str = DEFAULT_CHAT_GUIDE, lang: str = "ko-KR", voice: Optional[str] = None) -> str:
-    return tts_play(text=text, lang=lang, voice=voice)
-
 def _stt_google_from_wav(wav_path: str, sample_rate: int, language_code: str) -> str:
     client = speech.SpeechClient()
     with open(wav_path, "rb") as f:
@@ -583,82 +569,3 @@ def stt_once_with_error_handling(
                 pass
         
         return "", False
-
-# =========================
-# 간단 CLI (테스트용)
-# =========================
-def _cli():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="TTS/STT Helper (Raspberry Pi)")
-    sub = parser.add_subparsers(dest="cmd")
-
-    p_tts = sub.add_parser("tts", help="텍스트를 합성해 재생")
-    p_tts.add_argument("--text", type=str, required=True, help="합성할 텍스트")
-    p_tts.add_argument("--lang", type=str, default="ko-KR")
-    p_tts.add_argument("--voice", type=str, default=None, help="보이스 이름 (예: ko-KR-Wavenet-B)")
-    p_tts.add_argument("--rate", type=float, default=1.0, help="말하기 속도(0.25~4.0)")
-    p_tts.add_argument("--pitch", type=float, default=0.0, help="피치(-20.0~20.0)")
-    p_tts.add_argument("--enc", type=str, default="MP3", choices=["MP3", "LINEAR16", "WAV"])
-    p_tts.add_argument("--out", type=str, default=None, help="저장 경로(미지정 시 임시 폴더)")
-
-    p_stt = sub.add_parser("stt", help="마이크로 녹음 후 인식")
-    p_stt.add_argument("--mode", type=str, default="auto", choices=["auto", "fixed"], help="녹음 모드")
-    p_stt.add_argument("--duration", type=int, default=60, help="fixed: 길이(초) / auto: 기본 최대 길이(초)")
-    p_stt.add_argument("--sr", type=int, default=16000, help="샘플레이트")
-    p_stt.add_argument("--lang", type=str, default="ko-KR", help="인식 언어 코드")
-    p_stt.add_argument("--device", type=int, default=None, help="입력 장치 인덱스 (미지정 시 자동)")
-    p_stt.add_argument("--silence", type=float, default=1.2, help="auto: 침묵 종료 임계(초)")
-    p_stt.add_argument("--max", type=float, default=60.0, help="auto: 최대 녹음 시간(초)")
-    p_stt.add_argument("--calib", type=float, default=0.4, help="auto: 주변소음 기준 측정(초)")
-    p_stt.add_argument("--sens", type=float, default=2.0, help="auto: 민감도(높을수록 더 큰 소리에만 반응)")
-    p_stt.add_argument("--presnd", type=str, default=DEFAULT_PRE_SOUND, help="STT 시작 전 재생할 파일 경로")
-    p_stt.add_argument("--presnd_pause", type=float, default=0.25, help="프리사운드 재생 후 대기(초)")
-    p_stt.add_argument("--engine", type=str, default=None, choices=["google", "naver"],
-                   help="STT 엔진 선택 (google|naver). 미지정 시 환경변수 STT_ENGINE 또는 기본 google")
-
-    p_list = sub.add_parser("list", help="입력 장치 나열")
-
-    args = parser.parse_args()
-
-    if args.cmd == "tts":
-        path = tts_play(
-            text=args.text,
-            lang=args.lang,
-            voice=args.voice,
-            speaking_rate=args.rate,
-            pitch=args.pitch,
-            out_path=args.out,
-            audio_encoding=args.enc,
-        )
-        print(json.dumps({"ok": True, "path": path}, ensure_ascii=False))
-    elif args.cmd == "stt":
-        device = args.device
-        if device is None:
-            device = find_input_device_index()
-            print(f"[STT] auto-selected input device index: {device}")
-        text = stt_once(
-            mode="auto",               # 필요시 그대로 auto
-            duration=60,               # auto 모드에서 기본 상한으로도 사용
-            sample_rate=args.sr,       # 샘플레이트는 인자 그대로
-            language_code=args.lang,   # 언어도 인자 그대로
-            device=device,
-            silence_sec=1.2,           # ★ 침묵 더 길게
-            max_duration=60.0,         # ★ 최대 1분
-            calib_sec=args.calib,
-            sensitivity=args.sens,
-            min_speech_sec=0.2,        # ★ 짧은 발화 허용
-            pre_sound=args.presnd,
-            pre_sound_pause=args.presnd_pause,
-            engine="naver",            # ★ CSR 강제
-        )
-        print(json.dumps({"ok": True, "text": text}, ensure_ascii=False))
-    elif args.cmd == "list":
-        devs = list_input_devices()
-        print(json.dumps(devs, ensure_ascii=False, indent=2))
-    else:
-        parser.print_help()
-
-
-if __name__ == "__main__":
-    _cli()
