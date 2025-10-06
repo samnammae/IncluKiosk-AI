@@ -63,16 +63,16 @@ last_face_bbox = None
 last_face_time = 0.0
 
 # ⚡ 최적화된 파라미터
-FACEMESH_EVERY = 5       # 3→5로 증가 (부하 감소)
+FACEMESH_EVERY = 4       # 3→4 (부드러운 감소)
 FACE_TTL = 3.0          
-DETECT_EVERY = 9         # 6→9로 증가 (TPU 호출 빈도 감소)
-DETECT_SCORE_TH = 0.5   
-ROI_MARGIN = 0.20        # 0.25→0.20 (ROI 크기 감소)
-ALLOW_FALLBACK_FULLFRAME = False  # True→False (전체프레임 fallback 비활성화)
+DETECT_EVERY = 5         # 6→5 (초기 검출 빠르게)
+DETECT_SCORE_TH = 0.45   # 0.5→0.45 (검출 민감도 증가)
+ROI_MARGIN = 0.25        # 원래대로 복구
+ALLOW_FALLBACK_FULLFRAME = True  # ⚠️ True로 복구! (중요)
 
 # Hand detection 최적화
-HAND_EVERY = 5           # 2→5로 증가 (부하 대폭 감소)
-HAND_ROI_SCALE = 1.5     # hand detection을 얼굴 주변으로 제한
+HAND_EVERY = 4           # 2→4로 적절히 감소
+HAND_ROI_SCALE = 1.5     
 
 # Monitor parameters
 USER_MONITOR_DISTANCE = 40.0
@@ -84,7 +84,7 @@ MONITOR_WIDTH_PX, MONITOR_HEIGHT_PX = pyautogui.size()
 CENTER_X = MONITOR_WIDTH_PX // 2
 CENTER_Y = MONITOR_HEIGHT_PX // 2
 mouse_control_enabled = False
-filter_length = 8  # 10→8 (응답성 개선)
+filter_length = 8
 gaze_length = 350
 
 # 3D monitor state
@@ -107,24 +107,27 @@ combined_gaze_directions = deque(maxlen=filter_length)
 # Reference matrices
 R_ref_nose = [None]
 
-# MediaPipe FaceMesh - ⚡ 최적화된 설정
+# 🔍 디버깅 플래그
+DEBUG = True  # False로 설정하면 디버그 메시지 끄기
+
+# MediaPipe FaceMesh
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False,
     max_num_faces=1,
-    refine_landmarks=True,  # iris tracking 필요
-    min_detection_confidence=0.4,  # 0.5→0.4 (검출 임계값 낮춤)
-    min_tracking_confidence=0.4    # 0.5→0.4
+    refine_landmarks=True,
+    min_detection_confidence=0.4,
+    min_tracking_confidence=0.4
 )
 
-# MediaPipe Hands - ⚡ 최적화된 설정
+# MediaPipe Hands
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
-    model_complexity=0,      # 가장 가벼운 모델 유지
-    max_num_hands=1,         # 2→1 (한 손만 검출)
-    min_detection_confidence=0.4,  # 0.5→0.4
-    min_tracking_confidence=0.4    # 0.5→0.4
+    model_complexity=0,
+    max_num_hands=1,
+    min_detection_confidence=0.4,
+    min_tracking_confidence=0.4
 )
 
 hand_last_state = False
@@ -177,16 +180,18 @@ def init_tpu_face_detector():
         tpu_interpreter = None
         return False
 
-# Camera setup - ⚡ 해상도 최적화
+# Camera setup
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)   # 유지
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # 유지
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 cap.set(cv2.CAP_PROP_FPS, 30)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)      # ⚡ 버퍼 크기 감소
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+print(f"[Camera] Resolution: {w}x{h}")
 
 tpu_ok = init_tpu_face_detector()
 frame_count = 0
@@ -428,11 +433,17 @@ right_calibration_nose_scale = None
 base_radius = 20
 
 print("[Info] 'c'=calibrate, 's'=screen center, F7=mouse, 'q'=quit")
-print(f"[Optimization] FaceMesh every {FACEMESH_EVERY}, Hand every {HAND_EVERY}, TPU every {DETECT_EVERY}")
+print(f"[Settings] FaceMesh every {FACEMESH_EVERY}, Hand every {HAND_EVERY}, TPU every {DETECT_EVERY}")
+print(f"[Settings] Fallback fullframe: {ALLOW_FALLBACK_FULLFRAME}")
+
+# 🔍 성능 모니터링
+perf_counters = defaultdict(list)
+last_perf_print = time.time()
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        print("[ERROR] Failed to read frame!")
         break
     
     now_f = time.perf_counter()
@@ -444,7 +455,8 @@ while cap.isOpened():
     frame_count += 1
     now = time.time()
 
-    # ⚡ TPU 얼굴 검출 (빈도 감소)
+    # 🔍 TPU 얼굴 검출
+    tpu_start = time.perf_counter()
     if tpu_interpreter is not None and (frame_count % DETECT_EVERY == 0):
         dets = tpu_face_detect_bboxes_bgr(frame)
         if dets:
@@ -452,6 +464,11 @@ while cap.isOpened():
             x0, y0, x1, y1, sc = dets[0]
             last_face_bbox = (x0, y0, x1, y1)
             last_face_time = now
+            if DEBUG and frame_count % 30 == 0:
+                print(f"[TPU] Face detected: score={sc:.2f}, bbox={last_face_bbox}")
+        elif DEBUG and frame_count % 30 == 0:
+            print(f"[TPU] No face detected")
+    perf_counters['tpu'].append((time.perf_counter() - tpu_start) * 1000)
 
     # ROI 결정
     roi = (0, 0, w, h)
@@ -467,10 +484,17 @@ while cap.isOpened():
         frame_rgb = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
         cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 255, 0), 2)
+        cv2.putText(frame, f"ROI {x1-x0}x{y1-y0}", (x0, y0-10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    elif ALLOW_FALLBACK_FULLFRAME:
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        run_facemesh = (frame_count % FACEMESH_EVERY == 0)
+        if DEBUG and frame_count % 30 == 0:
+            print(f"[FALLBACK] Using full frame for FaceMesh")
 
-    # ⚡ Hand detection (최적화: 빈도 감소 + ROI 제한)
+    # 🔍 Hand detection
+    hand_start = time.perf_counter()
     if roi_valid and (frame_count % HAND_EVERY == 0):
-        # Hand ROI: 얼굴 bbox를 확장한 영역만 검사
         hx0, hy0, hx1, hy1 = expand_and_clip_bbox(last_face_bbox, HAND_ROI_SCALE, w, h)
         hand_roi_bgr = frame[hy0:hy1, hx0:hx1]
         hands_rgb = cv2.cvtColor(hand_roi_bgr, cv2.COLOR_BGR2RGB)
@@ -479,24 +503,30 @@ while cap.isOpened():
         curr_fist = False
         if hand_results.multi_hand_landmarks:
             for hlm in hand_results.multi_hand_landmarks:
-                # 로컬 좌표를 전체 프레임 좌표로 변환
                 rw = hx1 - hx0
                 rh = hy1 - hy0
                 if is_fist(hlm, rw, rh):
                     curr_fist = True
 
-        # 리징엣지에서 클릭 + 쿨다운
         if curr_fist and (not hand_last_state) and (now - last_fist_time > FIST_COOLDOWN):
             last_fist_time = now
             cv2.putText(frame, "FIST -> CHAT_ORDER_ON", (10, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             notify_frontend_and_exit()
         hand_last_state = curr_fist
+    perf_counters['hand'].append((time.perf_counter() - hand_start) * 1000)
 
-    # FaceMesh 실행
+    # 🔍 FaceMesh 실행
+    facemesh_start = time.perf_counter()
     results = None
     if run_facemesh and frame_rgb is not None:
         results = face_mesh.process(frame_rgb)
+        if DEBUG and frame_count % 30 == 0:
+            if results and results.multi_face_landmarks:
+                print(f"[FaceMesh] ✓ Detected landmarks")
+            else:
+                print(f"[FaceMesh] ✗ No landmarks")
+    perf_counters['facemesh'].append((time.perf_counter() - facemesh_start) * 1000)
 
     # 결과 처리
     face_landmarks = None
@@ -524,7 +554,7 @@ while cap.isOpened():
         last_iris_3d_left = iris_3d_left.copy()
         last_iris_3d_right = iris_3d_right.copy()
 
-    # ⚡ Eye sphere tracking & gaze (캐시가 있을 때만 실행)
+    # Eye sphere tracking & gaze
     if last_head_center is not None and last_iris_3d_left is not None:
         # LEFT EYE
         if left_sphere_locked:
@@ -579,14 +609,30 @@ while cap.isOpened():
         status_text.append(f"FPS: {fps_ema:.1f}")
     if last_face_bbox:
         status_text.append("Face: OK")
+    else:
+        status_text.append("Face: NONE")
     if last_head_center is not None:
         status_text.append("Mesh: OK")
+    else:
+        status_text.append("Mesh: NONE")
     if left_sphere_locked and right_sphere_locked:
         status_text.append("Calib: OK")
     
     for i, text in enumerate(status_text):
+        color = (0, 255, 0) if "OK" in text else (0, 0, 255)
         cv2.putText(frame, text, (10, 30 + i*25), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+    # 🔍 성능 통계 출력 (5초마다)
+    if DEBUG and (now - last_perf_print > 5.0):
+        print("\n=== Performance Stats ===")
+        for key, times in perf_counters.items():
+            if times:
+                avg = np.mean(times)
+                max_t = np.max(times)
+                print(f"  {key:10s}: avg={avg:.1f}ms, max={max_t:.1f}ms")
+        perf_counters.clear()
+        last_perf_print = now
 
     cv2.imshow("Eye Tracking", frame)
 
