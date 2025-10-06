@@ -366,6 +366,9 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * MONITOR_WIDTH_PX)
     screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * MONITOR_HEIGHT_PX)
     
+    # 후면카메라 좌우반전
+    screen_x = MONITOR_WIDTH_PX - screen_x
+    
     screen_x = max(10, min(screen_x, MONITOR_WIDTH_PX - 10))
     screen_y = max(10, min(screen_y, MONITOR_HEIGHT_PX - 10))
     
