@@ -161,6 +161,17 @@ async def handle_client(websocket):
                 print("▣ ▣ ▣ PIR_OFF!!!")
                 await stop_pir(websocket)
 
+                # 임시로 높이조절 비활성화 (바로 캘리조정)
+                await send_json(websocket, {"type": "EYE_CALIB_ON"})
+                # 1) 아이트래킹 프로세스 실행(필요 시만)
+                start_eye()
+                # 2) 프로세스가 WS 붙을 시간을 주기 위해 2초 대기
+                await asyncio.sleep(2.0)
+                # 3) 이제 보정 트리거 브로드캐스트
+                await broadcast_json({"type": "EYE_CALIB_ON"})
+                # if USE_ACK:
+                #     await send_json(websocket, {"type": "EYE_CALIB_ON"})
+
             elif msg_type == "PIR_DETECTED":
                 print("▣ ▣ ▣ PIR_DETECTED!!!")
                 await broadcast_json({"type": "PIR_DETECTED"})
