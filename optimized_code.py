@@ -14,23 +14,23 @@ import asyncio
 import websockets
 import json
 import sys
-import threading
+from pathlib import Path
+import subprocess
 
 # --- WebSocket flags ---
-toggle_mouse_requested = False  # F7 대체
-eye_calib_requested    = False  # c  대체
+toggle_mouse_requested = False  # F7 대체 (토글)
+eye_calib_requested    = False  # c  대체 (1회)
+force_mouse_on         = False  # 강제 마우스 ON (MOUSE_ON)
+fist_enabled           = True   # True: 주먹 인식, False: 비활성 (EYE_ORDER_ON에서 끔)
 
-# WS_URL = "ws://127.0.0.1:8765"  # 서버와 같은 머신이면 localhost/127.0.0.1
+BASE_DIR = Path(__file__).resolve().parent
 WS_URL = "ws://localhost:8765"
 
 async def ws_receiver():
-    global toggle_mouse_requested, eye_calib_requested
+    global toggle_mouse_requested, eye_calib_requested, force_mouse_on, fist_enabled
     while True:
         try:
             async with websockets.connect(WS_URL) as ws:
-                # 필요시: 등록 메시지 보내기 (옵션)
-                # await ws.send(json.dumps({"type":"HELLO", "role":"EYE_TRACKER"}))
-
                 while True:
                     raw = await ws.recv()
                     try:
@@ -44,8 +44,14 @@ async def ws_receiver():
                         print("[WS] EYE_CALIB_ON → eye_calib_requested=True")
 
                     elif msg_type == "EYE_ORDER_ON":
-                        toggle_mouse_requested = True
-                        print("[WS] EYE_ORDER_ON → toggle_mouse_requested=True")
+                        # 주먹 인식 끄고(요구5), 마우스 제어는 계속
+                        fist_enabled = False
+                        force_mouse_on = True
+                        print("[WS] EYE_ORDER_ON → fist_enabled=False, force_mouse_on=True")
+
+                    elif msg_type == "MOUSE_ON":
+                        force_mouse_on = True
+                        print("[WS] MOUSE_ON → force_mouse_on=True")
         except Exception as e:
             print(f"[WS] 연결 끊김/실패: {e}. 2초 후 재시도...")
             await asyncio.sleep(2)
@@ -56,7 +62,6 @@ def _start_ws_client_in_background():
     t = threading.Thread(target=runner, daemon=True)
     t.start()
 
-# 프로그램 시작 시점(카메라 열기 전 등)에 호출
 _start_ws_client_in_background()
 
 async def send_chat_order_on():
@@ -68,11 +73,24 @@ async def send_chat_order_on():
     except Exception as e:
         print(f"[WS] 전송 실패: {e}")
 
+def run_tts_stt_process():
+    """요구7: 주먹 감지 시 tts_stt.py 실행."""
+    script = str(BASE_DIR / "tts_stt.py")
+    try:
+        subprocess.Popen(["python3", script],
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        print("[PROC] tts_stt.py started")
+    except Exception as e:
+        print(f"[PROC] tts_stt.py start failed: {e}")
+
 def notify_frontend_and_exit():
     try:
         asyncio.run(send_chat_order_on())
     except Exception as e:
         print(f"[WS] asyncio 전송 오류: {e}")
+    # 요구7: tts_stt.py 실행
+    run_tts_stt_process()
     try:
         cap.release()
     except:
@@ -99,9 +117,9 @@ last_face_bbox = None
 last_face_time = 0.0
 
 # 최적화된 파라미터
-FACEMESH_EVERY = 3       # ROI 활용으로 더 자주 가능
-FACE_TTL = 3.0          
-DETECT_EVERY = 4         # MediaPipe Face Det는 빠름
+FACEMESH_EVERY = 3
+FACE_TTL = 3.0
+DETECT_EVERY = 4
 ROI_MARGIN = 0.25
 ALLOW_FALLBACK_FULLFRAME = True
 
@@ -143,12 +161,12 @@ combined_gaze_directions = deque(maxlen=filter_length)
 R_ref_nose = [None]
 
 # 디버깅 플래그
-DEBUG = False  # 성능 최적화를 위해 False
+DEBUG = False
 
 # MediaPipe Face Detection (빠른 얼굴 검출용)
 mp_face_detection = mp.solutions.face_detection
 face_detection = mp_face_detection.FaceDetection(
-    model_selection=0,  # 0=짧은거리(2m), 1=긴거리(5m)
+    model_selection=0,
     min_detection_confidence=0.5
 )
 
@@ -184,6 +202,7 @@ def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
     tip = _lm_xy(hand_landmarks, tip_idx, w, h)
     pip = _lm_xy(hand_landmarks, pip_idx, w, h)
     wrist = _lm_xy(hand_landmarks, wrist_idx, w, h)
+    # wrist = _lm_xy(hand_landmarks, 0, w, h)
     return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
 
 def is_thumb_curled(hand_landmarks, w, h):
@@ -202,32 +221,24 @@ def is_fist(hand_landmarks, w, h):
     return curled >= 4
 
 def mediapipe_face_detect(frame_bgr):
-    """MediaPipe로 얼굴 검출"""
     h, w = frame_bgr.shape[:2]
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     results = face_detection.process(rgb)
-    
     bboxes = []
     if results.detections:
         for detection in results.detections:
             bbox = detection.location_data.relative_bounding_box
             score = detection.score[0]
-            
-            # 상대 좌표 → 절대 좌표
             x0 = int(bbox.xmin * w)
             y0 = int(bbox.ymin * h)
             x1 = int((bbox.xmin + bbox.width) * w)
             y1 = int((bbox.ymin + bbox.height) * h)
-            
-            # 클리핑
             x0 = max(0, min(x0, w-1))
             y0 = max(0, min(y0, h-1))
             x1 = max(0, min(x1, w-1))
             y1 = max(0, min(y1, h-1))
-            
             if x1 > x0 and y1 > y0:
                 bboxes.append((x0, y0, x1, y1, score))
-    
     return bboxes
 
 # Camera setup
@@ -250,11 +261,15 @@ nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241,
                 461, 125, 354, 218, 438, 195, 167, 393, 165, 391,
                 3, 248]
 
-screen_position_file = r"/home/pi/IncluKiosk/screen_position.txt"
+screen_position_file = str(BASE_DIR / "screen_position.txt")
+# screen_position_file = r"/home/pi/IncluKiosk/screen_position.txt"
 
 def write_screen_position(x, y):
-    with open(screen_position_file, 'w') as f:
-        f.write(f"{x},{y}\n")
+    try:
+        with open(screen_position_file, 'w') as f:
+            f.write(f"{x},{y}\n")
+    except Exception:
+        pass
 
 def _normalize(v):
     v = np.asarray(v, dtype=float)
@@ -296,10 +311,8 @@ def create_monitor_plane(head_center, R_final, face_landmarks, w, h,
         center_w = head_center + head_forward * (USER_MONITOR_DISTANCE * upc)
 
     world_up = np.array([0, -1, 0], dtype=float)
-    head_right = np.cross(world_up, head_forward)
-    head_right /= np.linalg.norm(head_right)
-    head_up = np.cross(head_forward, head_right)
-    head_up /= np.linalg.norm(head_up)
+    head_right = np.cross(world_up, head_forward); head_right /= np.linalg.norm(head_right)
+    head_up = np.cross(head_forward, head_right); head_up /= np.linalg.norm(head_up)
 
     p0 = center_w - head_right * half_w - head_up * half_h
     p1 = center_w + head_right * half_w - head_up * half_h
@@ -354,14 +367,11 @@ def compute_coordinate_box(face_landmarks, indices, ref_matrix_container, w, h):
     cov = np.cov(centered.T)
     eigvals, eigvecs = np.linalg.eigh(cov)
     eigvecs = eigvecs[:, np.argsort(-eigvals)]
-    
     if np.linalg.det(eigvecs) < 0:
         eigvecs[:, 2] *= -1
-    
     r = Rscipy.from_matrix(eigvecs)
     roll, pitch, yaw = r.as_euler('zyx', degrees=False)
     R_final = Rscipy.from_euler('zyx', [roll, pitch, yaw]).as_matrix()
-    
     if ref_matrix_container[0] is None:
         ref_matrix_container[0] = R_final.copy()
     else:
@@ -369,51 +379,30 @@ def compute_coordinate_box(face_landmarks, indices, ref_matrix_container, w, h):
         for i in range(3):
             if np.dot(R_final[:, i], R_ref[:, i]) < 0:
                 R_final[:, i] *= -1
-    
     return center, R_final, points_3d
 
 def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offset_yaw, calibration_offset_pitch):
     reference_forward = np.array([0, 0, -1])
     avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
-    
-    xz_proj = np.array([avg_direction[0], 0, avg_direction[2]])
-    xz_proj /= np.linalg.norm(xz_proj)
+    xz_proj = np.array([avg_direction[0], 0, avg_direction[2]]); xz_proj /= np.linalg.norm(xz_proj)
     yaw_rad = math.acos(np.clip(np.dot(reference_forward, xz_proj), -1.0, 1.0))
     if avg_direction[0] < 0:
         yaw_rad = -yaw_rad
-    
-    yz_proj = np.array([0, avg_direction[1], avg_direction[2]])
-    yz_proj /= np.linalg.norm(yz_proj)
+    yz_proj = np.array([0, avg_direction[1], avg_direction[2]]); yz_proj /= np.linalg.norm(yz_proj)
     pitch_rad = math.acos(np.clip(np.dot(reference_forward, yz_proj), -1.0, 1.0))
     if avg_direction[1] > 0:
         pitch_rad = -pitch_rad
-    
-    yaw_deg = np.degrees(yaw_rad)
-    pitch_deg = np.degrees(pitch_rad)
-    
-    if yaw_deg < 0:
-        yaw_deg = -yaw_deg
-    elif yaw_deg > 0:
-        yaw_deg = -yaw_deg
-    
-    raw_yaw_deg = yaw_deg
-    raw_pitch_deg = pitch_deg
-    
-    yawDegrees = 15
-    pitchDegrees = 5
-    
-    yaw_deg += calibration_offset_yaw
-    pitch_deg += calibration_offset_pitch
-    
+    yaw_deg = math.degrees(yaw_rad); pitch_deg = math.degrees(pitch_rad)
+    if yaw_deg < 0: yaw_deg = -yaw_deg
+    elif yaw_deg > 0: yaw_deg = -yaw_deg
+    raw_yaw_deg = yaw_deg; raw_pitch_deg = pitch_deg
+    yawDegrees = 15; pitchDegrees = 5
+    yaw_deg += calibration_offset_yaw; pitch_deg += calibration_offset_pitch
     screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * MONITOR_WIDTH_PX)
     screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * MONITOR_HEIGHT_PX)
-    
-    # 후면카메라 좌우반전
-    screen_x = MONITOR_WIDTH_PX - screen_x
-    
+    screen_x = MONITOR_WIDTH_PX - screen_x  # 좌우반전
     screen_x = max(10, min(screen_x, MONITOR_WIDTH_PX - 10))
     screen_y = max(10, min(screen_y, MONITOR_HEIGHT_PX - 10))
-    
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
 
 def mouse_mover():
@@ -460,7 +449,6 @@ while cap.isOpened():
     now = time.time()
 
     # MediaPipe Face Detection
-    face_det_start = time.perf_counter()
     if frame_count % DETECT_EVERY == 0:
         dets = mediapipe_face_detect(frame)
         if dets:
@@ -468,7 +456,6 @@ while cap.isOpened():
             x0, y0, x1, y1, sc = dets[0]
             last_face_bbox = (x0, y0, x1, y1)
             last_face_time = now
-    perf_counters['face_det'].append((time.perf_counter() - face_det_start) * 1000)
 
     # ROI 결정
     roi = (0, 0, w, h)
@@ -488,9 +475,8 @@ while cap.isOpened():
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         run_facemesh = (frame_count % FACEMESH_EVERY == 0)
 
-    # Hand detection
-    hand_start = time.perf_counter()
-    if frame_count % HAND_EVERY == 0:
+    # Hand detection (요구5: fist_enabled가 False면 스킵)
+    if fist_enabled and (frame_count % HAND_EVERY == 0):
         if roi_valid:
             hx0, hy0, hx1, hy1 = expand_and_clip_bbox(last_face_bbox, HAND_ROI_SCALE, w, h)
             hand_roi_bgr = frame[hy0:hy1, hx0:hx1]
@@ -510,19 +496,16 @@ while cap.isOpened():
 
         if curr_fist and (not hand_last_state) and (now - last_fist_time > FIST_COOLDOWN):
             last_fist_time = now
-            print("[Hand] FIST TRIGGER -> Sending CHAT_ORDER_ON")
+            print("[Hand] FIST TRIGGER -> Sending CHAT_ORDER_ON + tts_stt.py + EXIT")
             cv2.putText(frame, "FIST -> CHAT_ORDER_ON", (10, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             notify_frontend_and_exit()
         hand_last_state = curr_fist
-    perf_counters['hand'].append((time.perf_counter() - hand_start) * 1000)
 
     # FaceMesh 실행
-    facemesh_start = time.perf_counter()
     results = None
     if run_facemesh and frame_rgb is not None:
         results = face_mesh.process(frame_rgb)
-    perf_counters['facemesh'].append((time.perf_counter() - facemesh_start) * 1000)
 
     # 결과 처리
     face_landmarks = None
@@ -562,24 +545,19 @@ while cap.isOpened():
             sphere_world_r = last_head_center + last_R_final @ scaled_offset_r
 
         if left_sphere_locked and right_sphere_locked:
-            left_gaze_dir = last_iris_3d_left - sphere_world_l
-            left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-            
-            right_gaze_dir = last_iris_3d_right - sphere_world_r
-            right_gaze_dir /= np.linalg.norm(right_gaze_dir)
-            
-            raw_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
-            raw_combined_direction /= np.linalg.norm(raw_combined_direction)
-
+            left_gaze_dir = last_iris_3d_left - sphere_world_l; left_gaze_dir /= np.linalg.norm(left_gaze_dir)
+            right_gaze_dir = last_iris_3d_right - sphere_world_r; right_gaze_dir /= np.linalg.norm(right_gaze_dir)
+            raw_combined_direction = (left_gaze_dir + right_gaze_dir) / 2; raw_combined_direction /= np.linalg.norm(raw_combined_direction)
             combined_gaze_directions.append(raw_combined_direction)
-            avg_combined_direction = np.mean(combined_gaze_directions, axis=0)
-            avg_combined_direction /= np.linalg.norm(avg_combined_direction)
+            avg_combined_direction = np.mean(combined_gaze_directions, axis=0); avg_combined_direction /= np.linalg.norm(avg_combined_direction)
 
             screen_x, screen_y, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
-                avg_combined_direction, 
-                calibration_offset_yaw, 
-                calibration_offset_pitch
+                avg_combined_direction, calibration_offset_yaw, calibration_offset_pitch
             )
+
+            # 강제 마우스 ON 명령 처리
+            if force_mouse_on:
+                mouse_control_enabled = True
 
             if mouse_control_enabled:
                 with mouse_lock:
@@ -587,66 +565,54 @@ while cap.isOpened():
                     mouse_target[1] = screen_y
 
             write_screen_position(screen_x, screen_y)
-            
-            cv2.putText(frame, f"Screen: ({screen_x}, {screen_y})", 
-                       (10, h-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(frame, f"Screen: ({screen_x}, {screen_y})", (10, h-20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     # FPS 및 상태 표시
     status_text = []
     if fps_ema:
         status_text.append(f"FPS: {fps_ema:.1f}")
-    if last_face_bbox:
-        status_text.append("Face: OK")
-    else:
-        status_text.append("Face: NONE")
-    if last_head_center is not None:
-        status_text.append("Mesh: OK")
-    else:
-        status_text.append("Mesh: NONE")
+    status_text.append("Face: OK" if last_face_bbox else "Face: NONE")
+    status_text.append("Mesh: OK" if last_head_center is not None else "Mesh: NONE")
     if left_sphere_locked and right_sphere_locked:
         status_text.append("Calib: OK")
-    
-    for i, text in enumerate(status_text):
-        color = (0, 255, 0) if "OK" in text else (0, 0, 255)
-        cv2.putText(frame, text, (10, 30 + i*25), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    if not fist_enabled:
+        status_text.append("Fist: OFF")
 
-    # 성능 통계 출력 (10초마다)
-    if DEBUG and (now - last_perf_print > 10.0):
-        print("\n=== Performance Stats ===")
-        for key, times in perf_counters.items():
-            if times:
-                avg = np.mean(times)
-                max_t = np.max(times)
-                print(f"  {key:10s}: avg={avg:.1f}ms, max={max_t:.1f}ms")
-        perf_counters.clear()
-        last_perf_print = now
+    for i, text in enumerate(status_text):
+        color = (0, 255, 0) if "OK" in text or "OFF" in text else (0, 0, 255)
+        cv2.putText(frame, text, (10, 30 + i*25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     cv2.imshow("Eye Tracking", frame)
 
-    # Keyboard
-    # 마우스 제어 (기존 f7)
-    # 1) 소켓으로부터 토글 요청이 온 경우 먼저 처리
+    # --- Keyboard/WS 제어 ---
+    # 0) 강제 마우스 ON 신호가 오면 즉시 반영
+    if force_mouse_on and not mouse_control_enabled:
+        mouse_control_enabled = True
+        print("[Mouse] ON (via WS MOUSE_ON)")
+        # 한 번만 강제하고 플래그 유지(연속 ON 명령에도 문제없음)
+
+    # 1) 토글 신호(WS)
     if toggle_mouse_requested:
         mouse_control_enabled = not mouse_control_enabled
-        print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}  (via WS)")
+        print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}  (via WS toggle)")
         toggle_mouse_requested = False
-        time.sleep(0.1)  # 너무 빠른 재토글 방지
+        time.sleep(0.1)
 
-    # 2) 키보드(F7)도 여전히 지원 (fallback)
+    # 2) 키보드(F7) 토글 (fallback)
     try:
         if keyboard.is_pressed('f7'):
             mouse_control_enabled = not mouse_control_enabled
             print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'} (via keyboard)")
             time.sleep(0.3)
     except Exception:
-        # 라즈베리파이에서 keyboard 모듈 이슈 회피
         pass
 
-    # 소켓 플래그를 키 값처럼 취급
+    # 3) 키 입력 먼저 읽고, 그 다음 c_pressed 계산(버그 수정 포인트)
+    key = cv2.waitKey(1) & 0xFF
     c_pressed = (key == ord('c')) or eye_calib_requested
 
-    key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
     elif c_pressed and not (left_sphere_locked and right_sphere_locked):
@@ -654,26 +620,22 @@ while cap.isOpened():
             print("[Calib] ✗ No face mesh data - wait for face detection")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
-
             # LEFT
             left_sphere_local_offset = last_R_final.T @ (last_iris_3d_left - last_head_center)
             camera_dir_world = np.array([0, 0, 1], dtype=float)
             camera_dir_local = last_R_final.T @ camera_dir_world
             left_sphere_local_offset += base_radius * camera_dir_local
             left_calibration_nose_scale = current_nose_scale
-
             # RIGHT
             right_sphere_local_offset = last_R_final.T @ (last_iris_3d_right - last_head_center)
             right_sphere_local_offset += base_radius * camera_dir_local
             right_calibration_nose_scale = current_nose_scale
-
             left_sphere_locked = True
             right_sphere_locked = True
 
             # Monitor plane
             sphere_world_l_calib = last_head_center + last_R_final @ left_sphere_local_offset
             sphere_world_r_calib = last_head_center + last_R_final @ right_sphere_local_offset
-
             left_dir = last_iris_3d_left - sphere_world_l_calib
             right_dir = last_iris_3d_right - sphere_world_r_calib
             if np.linalg.norm(left_dir) > 1e-9: left_dir /= np.linalg.norm(left_dir)
@@ -683,23 +645,18 @@ while cap.isOpened():
                 forward_hint /= np.linalg.norm(forward_hint)
             else:
                 forward_hint = None
-
             gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
             gaze_dir = forward_hint
-
             monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = create_monitor_plane(
                 last_head_center, last_R_final, face_landmarks, w, h,
                 forward_hint=forward_hint,
                 gaze_origin=gaze_origin,
                 gaze_dir=gaze_dir
             )
-
             print("[Calibration] ✓ Complete")
 
-        # 소켓으로 온 요청이었다면 1회성 소진
         if eye_calib_requested:
             eye_calib_requested = False
-
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
         if last_head_center is None:
@@ -710,17 +667,13 @@ while cap.isOpened():
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
             sphere_world_l_now = last_head_center + last_R_final @ (left_sphere_local_offset * scale_ratio_l)
             sphere_world_r_now = last_head_center + last_R_final @ (right_sphere_local_offset * scale_ratio_r)
-
             left_gaze_dir = last_iris_3d_left - sphere_world_l_now
             right_gaze_dir = last_iris_3d_right - sphere_world_r_now
-            if np.linalg.norm(left_gaze_dir) > 1e-9:
-                left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-            if np.linalg.norm(right_gaze_dir) > 1e-9:
-                right_gaze_dir /= np.linalg.norm(right_gaze_dir)
+            if np.linalg.norm(left_gaze_dir) > 1e-9: left_gaze_dir /= np.linalg.norm(left_gaze_dir)
+            if np.linalg.norm(right_gaze_dir) > 1e-9: right_gaze_dir /= np.linalg.norm(right_gaze_dir)
             current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2.0
             if np.linalg.norm(current_combined_direction) > 1e-9:
                 current_combined_direction /= np.linalg.norm(current_combined_direction)
-
             _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
                 current_combined_direction, 0, 0
             )

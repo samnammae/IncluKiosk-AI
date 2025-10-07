@@ -28,9 +28,15 @@ import atexit
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_worker.py")
+EYE_SCRIPT = str(BASE_DIR / "optimized_code.py")
+TTS_STT_SCRIPT = str(BASE_DIR / "tts_stt.py")
 
 workers = {"PIR": None}
 clients = set()
+
+# 런처 핸들
+eye_proc = None
+tts_proc = None
 
 USE_ACK = False  # 필요 없으면 False
 atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어엑추에이터 높이 낮추기
@@ -52,21 +58,21 @@ async def broadcast_json(payload: dict):
     for ws in dead:
         clients.discard(ws)
 
-async def start_pir(websocket):
+async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
-        if USE_ACK:
+        if USE_ACK and websocket:
             await send_json(websocket, {"type": "PIR_ON_ACK", "status": "already_running"})
         return
     proc = subprocess.Popen([PYTHON, PIR_WORKER])
     workers["PIR"] = proc
-    if USE_ACK:
+    if USE_ACK and websocket:
         await send_json(websocket, {"type": "PIR_ON_ACK", "status": "started"})
 
-async def stop_pir(websocket):
+async def stop_pir(websocket=None):
     proc = workers.get("PIR")
     if not proc or (proc.poll() is not None):
         workers["PIR"] = None
-        if USE_ACK:
+        if USE_ACK and websocket:
             await send_json(websocket, {"type": "PIR_OFF_ACK", "status": "already_stopped"})
         return
     proc.terminate()
@@ -80,14 +86,52 @@ async def stop_pir(websocket):
             pass
     finally:
         workers["PIR"] = None
-        if USE_ACK:
+        if USE_ACK and websocket:
             await send_json(websocket, {"type": "PIR_OFF_ACK", "status": "stopped"})
 
 async def clear_pir_state_and_notify_frontend():
     workers["PIR"] = None
     await broadcast_json({"type": "PIR_OFF"})
 
+# ====== 프로세스 런처 유틸 ======
+def is_running(p):
+    return (p is not None) and (p.poll() is None)
+
+def stop_proc(p):
+    if not is_running(p):
+        return None
+    try:
+        p.terminate()
+        try:
+            p.wait(timeout=3)
+        except Exception:
+            p.kill()
+    except Exception:
+        pass
+    return None
+
+def start_eye():
+    global eye_proc
+    if is_running(eye_proc):
+        return
+    # sudo -E 필요
+    eye_proc = subprocess.Popen(["sudo", "-E", "python", EYE_SCRIPT],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+
+def start_tts_stt():
+    global tts_proc
+    if is_running(tts_proc):
+        return
+    # 별도 프로세스로 실행 (요구 3,7 충족)
+    tts_proc = subprocess.Popen([PYTHON, TTS_STT_SCRIPT],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+
+# =================================
+
 async def handle_client(websocket):
+    global eye_proc, tts_proc
     print("클라이언트 연결됨")
     clients.add(websocket)
     try:
@@ -121,41 +165,42 @@ async def handle_client(websocket):
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
+                # 1) 아이트래킹 프로세스 실행(필요 시만)
+                start_eye()
+                # 2) 프로세스가 WS 붙을 시간을 주기 위해 2초 대기
+                await asyncio.sleep(2.0)
+                # 3) 이제 보정 트리거 브로드캐스트
                 await broadcast_json({"type": "EYE_CALIB_ON"})
+                if USE_ACK:
+                    await send_json(websocket, {"type": "EYE_CALIB_ON_ACK"})
 
             elif msg_type == "MODE_SELECT_ON":
-                subprocess.Popen([PYTHON, "-c", "print('MODE_SELECT stub')"])
+                # 마우스 제어 '강제 ON'
+                await broadcast_json({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
-                subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
+                # 1) 실행 중이던 optimized_code.py 종료
+                eye_proc = stop_proc(eye_proc)
+                # 2) tts_stt.py 실행
+                start_tts_stt()
                 if USE_ACK:
                     await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
-
-                guide_text = msg_text if (isinstance(msg_text, str) and msg_text.strip()) else DEFAULT_CHAT_GUIDE
-                loop = asyncio.get_running_loop()
-                try:
-                    print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
-                    # WAV로 합성해서 aplay 사용 (mpg123 미설치 환경 회피)
-                    await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
-                except Exception as e:
-                    print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
-                else:
-                    print("[TTS] 안내 종료 → TTS_OFF 전송")
-                    await send_json(websocket, {"type": "TTS_OFF"})
+                # (선택) 프론트에 상태 알림
+                await broadcast_json({"type": "TTS_ON_STARTED"})
 
             elif msg_type == "NORMAL_ORDER_ON":
-                subprocess.Popen([PYTHON, "-c", "print('NORMAL_ORDER stub')"])
+                # 아이트래킹 종료
+                eye_proc = stop_proc(eye_proc)
                 if USE_ACK:
                     await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
             elif msg_type == "EYE_ORDER_ON":
-                subprocess.Popen([PYTHON, "-c", "print('EYE_ORDER_ON stub')"])
-                # 클라이언트들(시선추적 포함)에게 방송
+                # 주먹 인식 OFF + 마우스 제어 ON
                 await broadcast_json({"type": "EYE_ORDER_ON"})
+                await broadcast_json({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
@@ -188,7 +233,6 @@ async def handle_client(websocket):
                 language_code = data.get("languageCode", "ko-KR")
                 device_idx = data.get("deviceIndex", None)
 
-                # 장치 자동 탐색
                 if device_idx is None:
                     device_idx = find_input_device_index()
                     print(f"[STT] deviceIndex 자동 선택: {device_idx}")
@@ -197,24 +241,18 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
                     continue
 
-                # 오류 처리 콜백 정의
                 async def notify_stt_error():
-                    """STT 오류 발생 시 프론트에 알림"""
                     print("[WebSocket] STT_ERR 전송")
                     await send_json(websocket, {"type": "STT_ERR"})
 
                 async def notify_error_end():
-                    """오류 안내 종료 시 프론트에 알림"""
                     print("[WebSocket] ERR_END 전송")
                     await send_json(websocket, {"type": "ERR_END"})
 
                 def run_stt_with_error():
-                    """STT 실행 + 오류 처리"""                    
-                    # 비동기 콜백을 동기로 변환
                     def sync_callback(coro):
                         future = asyncio.run_coroutine_threadsafe(coro, loop)
                         future.result(timeout=5)
-                    
                     return stt_once_with_error_handling(
                         on_error_callback=lambda: sync_callback(notify_stt_error()),
                         on_error_end_callback=lambda: sync_callback(notify_error_end()),
@@ -237,19 +275,22 @@ async def handle_client(websocket):
                 try:
                     print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
                     transcript, success = await loop.run_in_executor(None, run_stt_with_error)
-                    
                     if success:
                         print(f"[STT] 성공 결과: \"{transcript}\"")
                         await send_json(websocket, {"type": "STT_OFF", "message": transcript})
                     else:
                         print("[STT] 실패 처리 완료 (프론트 대기 중)")
-                        
                 except Exception as e:
                     print(f"[STT] 예외 발생: {e}", file=sys.stderr)
                     await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
 
             elif msg_type == "ALL_RESET":
-                await stop_pir(websocket)
+                # 모든 종료
+                eye_proc = stop_proc(eye_proc)
+                tts_proc = stop_proc(tts_proc)
+                await stop_pir()
+                # PIR 시작
+                await start_pir()
                 if USE_ACK:
                     await send_json(websocket, {"type": "ALL_RESET_ACK"})
                 else:
