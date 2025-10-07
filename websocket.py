@@ -158,13 +158,16 @@ async def handle_client(websocket):
                 await start_pir(websocket)
 
             elif msg_type == "PIR_OFF":
+                print("▣ ▣ ▣ PIR_OFF!!!")
                 await stop_pir(websocket)
 
             elif msg_type == "PIR_DETECTED":
+                print("▣ ▣ ▣ PIR_DETECTED!!!")
                 await broadcast_json({"type": "PIR_DETECTED"})
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
+                print("▣ ▣ ▣ EYE_CALIB_ON!!!")
                 # 1) 아이트래킹 프로세스 실행(필요 시만)
                 start_eye()
                 # 2) 프로세스가 WS 붙을 시간을 주기 위해 2초 대기
@@ -175,6 +178,7 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "EYE_CALIB_ON_ACK"})
 
             elif msg_type == "MODE_SELECT_ON":
+                print("▣ ▣ ▣ MODE_SELECT_ON!!!")
                 # 마우스 제어 '강제 ON'
                 await broadcast_json({"type": "MOUSE_ON"})
                 if USE_ACK:
@@ -182,6 +186,7 @@ async def handle_client(websocket):
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
+                print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
                 # 실행 중이던 optimized_code.py 종료
                 eye_proc = stop_proc(eye_proc)
                 subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
@@ -202,12 +207,14 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "NORMAL_ORDER_ON":
+                print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
                 # 아이트래킹 종료
                 eye_proc = stop_proc(eye_proc)
                 if USE_ACK:
                     await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
             elif msg_type == "EYE_ORDER_ON":
+                print("▣ ▣ ▣ EYE_ORDER_ON!!!")
                 # 주먹 인식 OFF + 마우스 제어 ON
                 await broadcast_json({"type": "EYE_ORDER_ON"})
                 await broadcast_json({"type": "MOUSE_ON"})
@@ -216,6 +223,7 @@ async def handle_client(websocket):
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
+                print("▣ ▣ ▣ TTS_ON!!!")
                 text  = data.get("message") or data.get("text") or ""
                 if not str(text).strip():
                     await send_json(websocket, {"type": "TTS_ERROR", "message": "Missing TTS text"})
@@ -238,6 +246,7 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "STT_ON":
+                print("▣ ▣ ▣ STT_ON!!!")
                 duration = int(data.get("duration", STT_MAX_DURATION))
                 sample_rate = int(data.get("sampleRate", STT_SAMPLE_RATE))
                 language_code = data.get("languageCode", "ko-KR")
@@ -295,6 +304,7 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
 
             elif msg_type == "ALL_RESET":
+                print("▣ ▣ ▣ ALL_RESET!!!")
                 # 모든 종료
                 eye_proc = stop_proc(eye_proc)
                 tts_proc = stop_proc(tts_proc)

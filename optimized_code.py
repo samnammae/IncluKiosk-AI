@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 import subprocess
 
+
 # --- WebSocket flags ---
 toggle_mouse_requested = False  # F7 대체 (토글)
 eye_calib_requested    = False  # c  대체 (1회)
@@ -26,33 +27,61 @@ fist_enabled           = True   # True: 주먹 인식, False: 비활성 (EYE_ORD
 BASE_DIR = Path(__file__).resolve().parent
 WS_URL = "ws://localhost:8765"
 
+import logging, sys, os, datetime
+BASE_DIR = Path(__file__).resolve().parent
+
+LOG_FILE = str(BASE_DIR / "optimized_code.log")  # 파일로도 남기기
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+def dbg(msg):
+    # 콘솔 + 파일 모두 찍고 즉시 flush
+    print(msg, flush=True)
+    logging.debug(msg)
+
+dbg("=== [BOOT] optimized_code.py start ===")
+dbg(f"WS_URL={WS_URL}")
+dbg(f"PWD={os.getcwd()}, USER={os.getenv('USER')}, DISPLAY={os.getenv('DISPLAY')}")
+
+
 async def ws_receiver():
     global toggle_mouse_requested, eye_calib_requested, force_mouse_on, fist_enabled
     while True:
         try:
+            dbg("[WS] trying to connect...")
             async with websockets.connect(WS_URL) as ws:
+                dbg("[WS] connected")
                 while True:
                     raw = await ws.recv()
+                    dbg(f"[WS] recv raw={raw}")
                     try:
                         data = json.loads(raw)
                         msg_type = data.get("type")
                     except Exception:
                         continue
+                    dbg(f"[WS] parsed type={msg_type}")
 
                     if msg_type == "EYE_CALIB_ON":
                         eye_calib_requested = True
+                        dbg("[WS] → eye_calib_requested=True")
                         print("[WS] EYE_CALIB_ON → eye_calib_requested=True")
 
                     elif msg_type == "EYE_ORDER_ON":
                         # 주먹 인식 끄고(요구5), 마우스 제어는 계속
                         fist_enabled = False
                         force_mouse_on = True
+                        dbg("[WS] → fist_enabled=False, force_mouse_on=True")
                         print("[WS] EYE_ORDER_ON → fist_enabled=False, force_mouse_on=True")
 
                     elif msg_type == "MOUSE_ON":
                         force_mouse_on = True
+                        dbg("[WS] → force_mouse_on=True")
                         print("[WS] MOUSE_ON → force_mouse_on=True")
         except Exception as e:
+            dbg(f"[WS] connect failed/disconnected: {e} (retry in 2s)")
             print(f"[WS] 연결 끊김/실패: {e}. 2초 후 재시도...")
             await asyncio.sleep(2)
 
@@ -63,6 +92,7 @@ def _start_ws_client_in_background():
     t.start()
 
 _start_ws_client_in_background()
+dbg("[WS] receiver thread starting...")
 
 async def send_chat_order_on():
     try:
@@ -85,12 +115,17 @@ def run_tts_stt_process():
         print(f"[PROC] tts_stt.py start failed: {e}")
 
 def notify_frontend_and_exit():
+    dbg("[Exit] sending CHAT_ORDER_ON to frontend")
     try:
         asyncio.run(send_chat_order_on())
+        dbg("[Exit] CHAT_ORDER_ON sent")
     except Exception as e:
+        dbg(f"[Exit] send_chat_order_on error: {e}")
         print(f"[WS] asyncio 전송 오류: {e}")
     # 요구7: tts_stt.py 실행
+    dbg("[Exit] starting tts_stt.py")
     run_tts_stt_process()
+    dbg("[Exit] releasing camera & destroying windows, then sys.exit(0)")
     try:
         cap.release()
     except:
@@ -243,6 +278,7 @@ def mediapipe_face_detect(frame_bgr):
 
 # Camera setup
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+dbg(f"[Camera] open={cap.isOpened()}")
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -254,6 +290,7 @@ h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
 print(f"[Camera] Resolution: {w}x{h}")
 print(f"[Face Detection] Using MediaPipe (CPU-optimized)")
+dbg(f"[Camera] set resolution: {w}x{h}, fps={cap.get(cv2.CAP_PROP_FPS)}")
 
 frame_count = 0
 
@@ -406,10 +443,14 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
 
 def mouse_mover():
+    dbg("[Mouse] mover thread start")
     while True:
         if mouse_control_enabled:
             with mouse_lock:
                 x, y = mouse_target
+            if xy != last_xy:
+                dbg(f"[Mouse] moveTo {xy}")
+                last_xy = xy
             pyautogui.moveTo(x, y)
         time.sleep(0.01)
 
@@ -436,6 +477,7 @@ last_perf_print = time.time()
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        dbg("[Frame] read failed!")
         print("[ERROR] Failed to read frame!")
         break
     
@@ -451,6 +493,8 @@ while cap.isOpened():
     # MediaPipe Face Detection
     if frame_count % DETECT_EVERY == 0:
         dets = mediapipe_face_detect(frame)
+        dbg(f"[FaceDet] dets={len(dets) if dets else 0}")
+
         if dets:
             dets.sort(key=lambda x: x[4], reverse=True)
             x0, y0, x1, y1, sc = dets[0]
@@ -494,8 +538,10 @@ while cap.isOpened():
                 if is_fist(hlm, hand_w, hand_h):
                     curr_fist = True
 
+        dbg(f"[Hand] fist={curr_fist}, last_state={hand_last_state}")
         if curr_fist and (not hand_last_state) and (now - last_fist_time > FIST_COOLDOWN):
             last_fist_time = now
+            dbg("[Hand] FIST TRIGGER -> notify_frontend_and_exit()")
             print("[Hand] FIST TRIGGER -> Sending CHAT_ORDER_ON + tts_stt.py + EXIT")
             cv2.putText(frame, "FIST -> CHAT_ORDER_ON", (10, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -505,7 +551,9 @@ while cap.isOpened():
     # FaceMesh 실행
     results = None
     if run_facemesh and frame_rgb is not None:
+        dbg("[FaceMesh] processing...")
         results = face_mesh.process(frame_rgb)
+        dbg(f"[FaceMesh] result faces={len(results.multi_face_landmarks) if (results and results.multi_face_landmarks) else 0}")
 
     # 결과 처리
     face_landmarks = None
@@ -554,10 +602,12 @@ while cap.isOpened():
             screen_x, screen_y, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
                 avg_combined_direction, calibration_offset_yaw, calibration_offset_pitch
             )
+            dbg(f"[Gaze] screen=({screen_x},{screen_y}) raw_yaw={raw_yaw:.2f} raw_pitch={raw_pitch:.2f}")
 
             # 강제 마우스 ON 명령 처리
             if force_mouse_on:
                 mouse_control_enabled = True
+                dbg("[Mouse] ON via MOUSE_ON")
 
             if mouse_control_enabled:
                 with mouse_lock:
@@ -596,6 +646,7 @@ while cap.isOpened():
     # 1) 토글 신호(WS)
     if toggle_mouse_requested:
         mouse_control_enabled = not mouse_control_enabled
+        dbg(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'} via WS toggle")
         print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}  (via WS toggle)")
         toggle_mouse_requested = False
         time.sleep(0.1)
@@ -604,9 +655,11 @@ while cap.isOpened():
     try:
         if keyboard.is_pressed('f7'):
             mouse_control_enabled = not mouse_control_enabled
+            dbg(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'} via keyboard F7")
             print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'} (via keyboard)")
             time.sleep(0.3)
     except Exception:
+        dbg(f"[Keyboard] keyboard.is_pressed error: {e}")
         pass
 
     # 3) 키 입력 먼저 읽고, 그 다음 c_pressed 계산(버그 수정 포인트)
@@ -614,9 +667,12 @@ while cap.isOpened():
     c_pressed = (key == ord('c')) or eye_calib_requested
 
     if key == ord('q'):
+        dbg("[Key] q → quit")
         break
     elif c_pressed and not (left_sphere_locked and right_sphere_locked):
+        dbg(f"[Calib] trigger. have_mesh={last_head_center is not None}")
         if last_head_center is None:
+            dbg("[Calib] ✗ No face mesh data")
             print("[Calib] ✗ No face mesh data - wait for face detection")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
@@ -653,9 +709,11 @@ while cap.isOpened():
                 gaze_origin=gaze_origin,
                 gaze_dir=gaze_dir
             )
+            dbg("[Calib] ✓ Complete (left/right locked)")
             print("[Calibration] ✓ Complete")
 
         if eye_calib_requested:
+            dbg("[Calib] consumed eye_calib_requested=True → False")
             eye_calib_requested = False
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
@@ -681,5 +739,7 @@ while cap.isOpened():
             calibration_offset_pitch = -raw_pitch
             print(f"[Screen Calibrated] ✓ Yaw: {calibration_offset_yaw:.2f}, Pitch: {calibration_offset_pitch:.2f}")
 
+dbg("[Shutdown] releasing resources")
 cap.release()
 cv2.destroyAllWindows()
+dbg("=== [BOOT] optimized_code.py end ===")
