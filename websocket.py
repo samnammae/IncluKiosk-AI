@@ -182,14 +182,24 @@ async def handle_client(websocket):
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
-                # 1) 실행 중이던 optimized_code.py 종료
+                # 실행 중이던 optimized_code.py 종료
                 eye_proc = stop_proc(eye_proc)
-                # 2) tts_stt.py 실행
-                start_tts_stt()
+                subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
                 if USE_ACK:
                     await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
-                # (선택) 프론트에 상태 알림
-                await broadcast_json({"type": "TTS_ON_STARTED"})
+
+                guide_text = DEFAULT_CHAT_GUIDE  # tts_stt.py에 정의되어 있음
+                loop = asyncio.get_running_loop()
+                try:
+                    print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
+                    # WAV로 합성해서 aplay 사용 (mpg123 미설치 환경 회피)
+                    await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+                except Exception as e:
+                    print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+                    await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
+                else:
+                    print("[TTS] 안내 종료 → TTS_OFF 전송")
+                    await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "NORMAL_ORDER_ON":
                 # 아이트래킹 종료
