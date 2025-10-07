@@ -153,7 +153,9 @@ async def handle_client(websocket):
                     await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
             elif msg_type == "EYE_ORDER_ON":
-                subprocess.Popen([PYTHON, "-c", "print('EYE_ORDER stub')"])
+                subprocess.Popen([PYTHON, "-c", "print('EYE_ORDER_ON stub')"])
+                # 클라이언트들(시선추적 포함)에게 방송
+                await broadcast_json({"type": "EYE_ORDER_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 

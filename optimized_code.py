@@ -14,8 +14,50 @@ import asyncio
 import websockets
 import json
 import sys
+import threading
 
-WS_URL = "ws://127.0.0.1:8765"
+# --- WebSocket flags ---
+toggle_mouse_requested = False  # F7 대체
+eye_calib_requested    = False  # c  대체
+
+# WS_URL = "ws://127.0.0.1:8765"  # 서버와 같은 머신이면 localhost/127.0.0.1
+WS_URL = "ws://localhost:8765"
+
+async def ws_receiver():
+    global toggle_mouse_requested, eye_calib_requested
+    while True:
+        try:
+            async with websockets.connect(WS_URL) as ws:
+                # 필요시: 등록 메시지 보내기 (옵션)
+                # await ws.send(json.dumps({"type":"HELLO", "role":"EYE_TRACKER"}))
+
+                while True:
+                    raw = await ws.recv()
+                    try:
+                        data = json.loads(raw)
+                        msg_type = data.get("type")
+                    except Exception:
+                        continue
+
+                    if msg_type == "EYE_CALIB_ON":
+                        eye_calib_requested = True
+                        print("[WS] EYE_CALIB_ON → eye_calib_requested=True")
+
+                    elif msg_type == "EYE_ORDER_ON":
+                        toggle_mouse_requested = True
+                        print("[WS] EYE_ORDER_ON → toggle_mouse_requested=True")
+        except Exception as e:
+            print(f"[WS] 연결 끊김/실패: {e}. 2초 후 재시도...")
+            await asyncio.sleep(2)
+
+def _start_ws_client_in_background():
+    def runner():
+        asyncio.run(ws_receiver())
+    t = threading.Thread(target=runner, daemon=True)
+    t.start()
+
+# 프로그램 시작 시점(카메라 열기 전 등)에 호출
+_start_ws_client_in_background()
 
 async def send_chat_order_on():
     try:
@@ -583,26 +625,44 @@ while cap.isOpened():
     cv2.imshow("Eye Tracking", frame)
 
     # Keyboard
-    if keyboard.is_pressed('f7'):
+    # 마우스 제어 (기존 f7)
+    # 1) 소켓으로부터 토글 요청이 온 경우 먼저 처리
+    if toggle_mouse_requested:
         mouse_control_enabled = not mouse_control_enabled
-        print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}")
-        time.sleep(0.3)
+        print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'}  (via WS)")
+        toggle_mouse_requested = False
+        time.sleep(0.1)  # 너무 빠른 재토글 방지
+
+    # 2) 키보드(F7)도 여전히 지원 (fallback)
+    try:
+        if keyboard.is_pressed('f7'):
+            mouse_control_enabled = not mouse_control_enabled
+            print(f"[Mouse] {'ON' if mouse_control_enabled else 'OFF'} (via keyboard)")
+            time.sleep(0.3)
+    except Exception:
+        # 라즈베리파이에서 keyboard 모듈 이슈 회피
+        pass
+
+    # 소켓 플래그를 키 값처럼 취급
+    c_pressed = (key == ord('c')) or eye_calib_requested
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
+    elif c_pressed and not (left_sphere_locked and right_sphere_locked):
         if last_head_center is None:
-            print("[Calib] ✗ No face mesh data")
+            print("[Calib] ✗ No face mesh data - wait for face detection")
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
 
+            # LEFT
             left_sphere_local_offset = last_R_final.T @ (last_iris_3d_left - last_head_center)
             camera_dir_world = np.array([0, 0, 1], dtype=float)
             camera_dir_local = last_R_final.T @ camera_dir_world
             left_sphere_local_offset += base_radius * camera_dir_local
             left_calibration_nose_scale = current_nose_scale
 
+            # RIGHT
             right_sphere_local_offset = last_R_final.T @ (last_iris_3d_right - last_head_center)
             right_sphere_local_offset += base_radius * camera_dir_local
             right_calibration_nose_scale = current_nose_scale
@@ -610,15 +670,14 @@ while cap.isOpened():
             left_sphere_locked = True
             right_sphere_locked = True
 
+            # Monitor plane
             sphere_world_l_calib = last_head_center + last_R_final @ left_sphere_local_offset
             sphere_world_r_calib = last_head_center + last_R_final @ right_sphere_local_offset
 
             left_dir = last_iris_3d_left - sphere_world_l_calib
             right_dir = last_iris_3d_right - sphere_world_r_calib
-            if np.linalg.norm(left_dir) > 1e-9:
-                left_dir /= np.linalg.norm(left_dir)
-            if np.linalg.norm(right_dir) > 1e-9:
-                right_dir /= np.linalg.norm(right_dir)
+            if np.linalg.norm(left_dir) > 1e-9: left_dir /= np.linalg.norm(left_dir)
+            if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
             forward_hint = (left_dir + right_dir) * 0.5
             if np.linalg.norm(forward_hint) > 1e-9:
                 forward_hint /= np.linalg.norm(forward_hint)
@@ -636,6 +695,11 @@ while cap.isOpened():
             )
 
             print("[Calibration] ✓ Complete")
+
+        # 소켓으로 온 요청이었다면 1회성 소진
+        if eye_calib_requested:
+            eye_calib_requested = False
+
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
         if last_head_center is None:
