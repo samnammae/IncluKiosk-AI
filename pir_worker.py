@@ -32,14 +32,14 @@ def _resolve_pull_mode():
     else:
         return None
 
-async def send_pir_off():
-    """서버에 'worker' 소스로 PIR_OFF 전송 (서버는 프론트로 브로드캐스트)."""
+async def send_pir_detected():
+    """서버에 'worker' 소스로 PIR_DETECTED 전송 (서버는 프론트로 브로드캐스트)."""
     try:
         async with websockets.connect(SERVER_URI) as ws:
             await ws.send(json.dumps({"type": "PIR_DETECTED", "source": "worker"}))
-        print(f"[PIR] Sent PIR_OFF(source=worker) to {SERVER_URI}", flush=True)
+        print(f"[PIR] Sent PIR_DETECTED(source=worker) to {SERVER_URI}", flush=True)
     except Exception as e:
-        print(f"[PIR] Failed to send PIR_OFF: {e}", flush=True)
+        print(f"[PIR] Failed to send PIR_DETECTED: {e}", flush=True)
 
 async def main():
     print(
@@ -86,7 +86,7 @@ async def main():
             # 확정 시 서버 통지 후 워커 종료 (서버는 계속 RUN)
             if confirm >= max(1, CONFIRM_COUNT):
                 print("[PIR] Motion confirmed → notify server and exit", flush=True)
-                await send_pir_off()
+                await send_pir_detected()
                 break
 
             await asyncio.sleep(SLEEP_SEC)
