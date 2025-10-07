@@ -28,18 +28,21 @@ import atexit
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_worker.py")
-EYE_SCRIPT = str(BASE_DIR / "optimized_code.py")
+EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")  # 파일명 변경
 TTS_STT_SCRIPT = str(BASE_DIR / "tts_stt.py")
 
 workers = {"PIR": None}
-clients = set()
+clients = set()  # 프론트엔드 클라이언트들
 
 # 런처 핸들
 eye_proc = None
 tts_proc = None
 
+# === 새로 추가: eye_tracking_worker와의 내부 통신용 ===
+eye_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
+
 USE_ACK = False  # 필요 없으면 False
-atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어엑추에이터 높이 낮추기
+atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어액추에이터 높이 낮추기
 
 async def send_json(ws, payload: dict):
     try:
@@ -57,6 +60,15 @@ async def broadcast_json(payload: dict):
             dead.append(ws)
     for ws in dead:
         clients.discard(ws)
+
+# === 새로 추가: eye_tracking_worker로 메시지 전송 ===
+async def send_to_eye_worker(payload: dict):
+    """eye_tracking_worker로 메시지 전송"""
+    if eye_worker_ws:
+        try:
+            await eye_worker_ws.send(json.dumps(payload, ensure_ascii=False))
+        except Exception as e:
+            print(f"[Hub→Eye] 전송 실패: {e}")
 
 async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
@@ -130,7 +142,8 @@ def start_tts_stt():
 
 # =================================
 
-async def handle_client(websocket):
+# === 수정: handle_client → handle_frontend (프론트엔드 전용) ===
+async def handle_frontend(websocket):
     global eye_proc, tts_proc
     print("클라이언트 연결됨")
     clients.add(websocket)
@@ -169,8 +182,6 @@ async def handle_client(websocket):
                 await asyncio.sleep(2.0)
                 # 3) 이제 보정 트리거 브로드캐스트
                 await broadcast_json({"type": "EYE_CALIB_ON"})
-                # if USE_ACK:
-                #     await send_json(websocket, {"type": "EYE_CALIB_ON"})
 
             elif msg_type == "PIR_DETECTED":
                 print("▣ ▣ ▣ PIR_DETECTED!!!")
@@ -185,6 +196,8 @@ async def handle_client(websocket):
                 await asyncio.sleep(2.0)
                 # 3) 이제 보정 트리거 브로드캐스트
                 await broadcast_json({"type": "EYE_CALIB_ON"})
+                # === 새로 추가: eye_tracking_worker로 캘리브레이션 명령 전송 ===
+                await send_to_eye_worker({"type": "EYE_CALIB_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_CALIB_ON_ACK"})
 
@@ -192,6 +205,8 @@ async def handle_client(websocket):
                 print("▣ ▣ ▣ MODE_SELECT_ON!!!")
                 # 마우스 제어 '강제 ON'
                 await broadcast_json({"type": "MOUSE_ON"})
+                # === 새로 추가: eye_tracking_worker로 마우스 ON 명령 전송 ===
+                await send_to_eye_worker({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
 
@@ -201,6 +216,8 @@ async def handle_client(websocket):
                 # 실행 중이던 optimized_code.py 종료
                 eye_proc = stop_proc(eye_proc)
                 subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
+                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
+                await send_to_eye_worker({"type": "STOP_ALL"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
 
@@ -221,6 +238,8 @@ async def handle_client(websocket):
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
                 # 아이트래킹 종료
                 eye_proc = stop_proc(eye_proc)
+                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
+                await send_to_eye_worker({"type": "STOP_ALL"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
@@ -229,6 +248,9 @@ async def handle_client(websocket):
                 # 주먹 인식 OFF + 마우스 제어 ON
                 await broadcast_json({"type": "EYE_ORDER_ON"})
                 await broadcast_json({"type": "MOUSE_ON"})
+                # === 새로 추가: eye_tracking_worker로 명령 전송 ===
+                await send_to_eye_worker({"type": "EYE_ORDER_ON"})
+                await send_to_eye_worker({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
@@ -320,6 +342,8 @@ async def handle_client(websocket):
                 eye_proc = stop_proc(eye_proc)
                 tts_proc = stop_proc(tts_proc)
                 await stop_pir()
+                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
+                await send_to_eye_worker({"type": "STOP_ALL"})
                 # PIR 시작
                 await start_pir()
                 if USE_ACK:
@@ -335,9 +359,57 @@ async def handle_client(websocket):
     finally:
         clients.discard(websocket)
 
+# === 새로 추가: eye_tracking_worker와의 내부 통신 핸들러 ===
+async def handle_eye_worker(websocket):
+    """eye_tracking_worker의 WebSocket 연결 처리 (내부 통신용)"""
+    global eye_worker_ws
+    eye_worker_ws = websocket
+    print("[Eye Worker] 내부 연결됨")
+    
+    try:
+        async for raw in websocket:
+            data = json.loads(raw)
+            msg_type = data.get("type")
+            print(f"[Eye Worker→Hub] 수신: {msg_type}")
+            
+            # === CASE 5-1: 주먹 감지 → 대화주문 ===
+            if msg_type == "FIST_DETECTED":
+                print("▣ ▣ ▣ FIST_DETECTED → CHAT_ORDER_ON")
+                # 프론트엔드로 전달
+                await broadcast_json({"type": "CHAT_ORDER_ON"})
+                # eye_tracking_worker 정지
+                await send_to_eye_worker({"type": "STOP_ALL"})
+                # 안내 TTS 자동 재생
+                guide_text = DEFAULT_CHAT_GUIDE
+                loop = asyncio.get_running_loop()
+                try:
+                    print(f"[TTS] 안내 시작: \"{guide_text}\"")
+                    await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+                    print("[TTS] 안내 종료 → END_GUIDE 브로드캐스트")
+                    await broadcast_json({"type": "END_GUIDE"})
+                except Exception as e:
+                    print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+    
+    except websockets.exceptions.ConnectionClosed:
+        print("[Eye Worker] 연결 끊김")
+    finally:
+        eye_worker_ws = None
+
+# === 수정: main 함수에서 두 개의 서버 실행 ===
 async def main():
-    print("서버 시작됨 (0.0.0.0:8765)")
-    async with websockets.serve(handle_client, "0.0.0.0", 8765):
+    print("=" * 60)
+    print("서버 시작됨")
+    print("  - 프론트엔드: ws://0.0.0.0:8765")
+    print("  - Eye Worker (내부): ws://localhost:8766")
+    print("=" * 60)
+    
+    # 프론트엔드용 서버 (포트 8765)
+    frontend_server = websockets.serve(handle_frontend, "0.0.0.0", 8765)
+    
+    # eye_tracking_worker용 내부 서버 (포트 8766)
+    internal_server = websockets.serve(handle_eye_worker, "localhost", 8766)
+    
+    async with frontend_server, internal_server:
         await asyncio.Future()
 
 if __name__ == "__main__":
