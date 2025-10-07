@@ -142,6 +142,39 @@ def start_tts_stt():
 
 # =================================
 
+# === CHAT_ORDER_ON 처리 로직을 별도 함수로 분리 ===
+async def handle_chat_order_on(websocket=None):
+    """CHAT_ORDER_ON 공통 처리 로직"""
+    print("▣ ▣ ▣ CHAT_ORDER_ON 처리 시작")
+    
+    # 1. 아이트래킹 정지
+    global eye_proc
+    eye_proc = stop_proc(eye_proc)
+    await send_to_eye_worker({"type": "STOP_ALL"})
+    
+    # 2. ACK 전송 (websocket이 있으면)
+    if USE_ACK and websocket:
+        await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
+    
+    # 3. 안내 TTS 재생
+    guide_text = DEFAULT_CHAT_GUIDE
+    loop = asyncio.get_running_loop()
+    try:
+        print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
+        await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+        print("[TTS] 안내 종료 → TTS_OFF 전송")
+        # websocket이 있으면 특정 클라이언트에게, 없으면 브로드캐스트
+        if websocket:
+            await send_json(websocket, {"type": "TTS_OFF"})
+        else:
+            await broadcast_json({"type": "END_GUIDE"})
+    except Exception as e:
+        print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+        if websocket:
+            await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
+
+
+
 # === 수정: handle_client → handle_frontend (프론트엔드 전용) ===
 async def handle_frontend(websocket):
     global eye_proc, tts_proc
@@ -213,26 +246,28 @@ async def handle_frontend(websocket):
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
                 print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
-                # 실행 중이던 optimized_code.py 종료
-                eye_proc = stop_proc(eye_proc)
-                subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
-                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
-                await send_to_eye_worker({"type": "STOP_ALL"})
-                if USE_ACK:
-                    await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
+                await handle_chat_order_on(websocket)
 
-                guide_text = DEFAULT_CHAT_GUIDE  # tts_stt.py에 정의되어 있음
-                loop = asyncio.get_running_loop()
-                try:
-                    print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
-                    # WAV로 합성해서 aplay 사용 (mpg123 미설치 환경 회피)
-                    await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
-                except Exception as e:
-                    print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
-                else:
-                    print("[TTS] 안내 종료 → TTS_OFF 전송")
-                    await send_json(websocket, {"type": "TTS_OFF"})
+                # # 실행 중이던 optimized_code.py 종료
+                # eye_proc = stop_proc(eye_proc)
+                # subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
+                # # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
+                # await send_to_eye_worker({"type": "STOP_ALL"})
+                # if USE_ACK:
+                #     await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
+
+                # guide_text = DEFAULT_CHAT_GUIDE  # tts_stt.py에 정의되어 있음
+                # loop = asyncio.get_running_loop()
+                # try:
+                #     print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
+                #     # WAV로 합성해서 aplay 사용 (mpg123 미설치 환경 회피)
+                #     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+                # except Exception as e:
+                #     print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+                #     await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
+                # else:
+                #     print("[TTS] 안내 종료 → TTS_OFF 전송")
+                #     await send_json(websocket, {"type": "TTS_OFF"})
 
             elif msg_type == "NORMAL_ORDER_ON":
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
@@ -377,18 +412,20 @@ async def handle_eye_worker(websocket):
                 print("▣ ▣ ▣ FIST_DETECTED → CHAT_ORDER_ON")
                 # 프론트엔드로 전달
                 await broadcast_json({"type": "CHAT_ORDER_ON"})
-                # eye_tracking_worker 정지
-                await send_to_eye_worker({"type": "STOP_ALL"})
-                # 안내 TTS 자동 재생
-                guide_text = DEFAULT_CHAT_GUIDE
-                loop = asyncio.get_running_loop()
-                try:
-                    print(f"[TTS] 안내 시작: \"{guide_text}\"")
-                    await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
-                    print("[TTS] 안내 종료 → END_GUIDE 브로드캐스트")
-                    await broadcast_json({"type": "END_GUIDE"})
-                except Exception as e:
-                    print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+                # 동일한 처리 로직 실행
+                await handle_chat_order_on() 
+                # # eye_tracking_worker 정지
+                # await send_to_eye_worker({"type": "STOP_ALL"})
+                # # 안내 TTS 자동 재생
+                # guide_text = DEFAULT_CHAT_GUIDE
+                # loop = asyncio.get_running_loop()
+                # try:
+                #     print(f"[TTS] 안내 시작: \"{guide_text}\"")
+                #     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+                #     print("[TTS] 안내 종료 → END_GUIDE 브로드캐스트")
+                #     await broadcast_json({"type": "END_GUIDE"})
+                # except Exception as e:
+                #     print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
     
     except websockets.exceptions.ConnectionClosed:
         print("[Eye Worker] 연결 끊김")
