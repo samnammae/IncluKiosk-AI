@@ -13,6 +13,7 @@ from tts_stt import (
     stt_once_with_error_handling,
     DEFAULT_CHAT_GUIDE,
     DEFAULT_ERROR_GUIDE,
+    DEFAULT_CANCEL_GUIDE,
     STT_SILENCE_SEC,
     STT_MAX_DURATION,
     STT_CALIB_SEC,
@@ -21,6 +22,8 @@ from tts_stt import (
     STT_ENGINE,
     STT_SAMPLE_RATE
 )
+# 프론트엔드별 STT 무응답(실패) 횟수 카운터
+stt_fail_counts = {}  # key=websocket, value=int
 
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
@@ -180,6 +183,7 @@ async def handle_frontend(websocket):
     global eye_proc, tts_proc
     print("클라이언트 연결됨")
     clients.add(websocket)
+    stt_fail_counts[websocket] = 0
     try:
         async for raw in websocket:
             print(f"받은 메시지: {raw}")
@@ -363,13 +367,42 @@ async def handle_frontend(websocket):
                     print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
                     transcript, success = await loop.run_in_executor(None, run_stt_with_error)
                     if success:
+                        # 성공하면 카운터 리셋
+                        stt_fail_counts[websocket] = 0
                         print(f"[STT] 성공 결과: \"{transcript}\"")
                         await send_json(websocket, {"type": "STT_OFF", "message": transcript})
                     else:
+                        # 실패(무응답 포함) → 카운트 증가
+                        stt_fail_counts[websocket] = stt_fail_counts.get(websocket, 0) + 1
                         print("[STT] 실패 처리 완료 (프론트 대기 중)")
+
+                        # 2회 도달 시 → ORDER_CANCEL + 취소 안내 TTS + CANCEL_END
+                        if stt_fail_counts[websocket] >= 2:
+                            print("[ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
+
+                            # (1) ORDER_CANCEL 통지
+                            await send_json(websocket, {"type": "ORDER_CANCEL"})
+
+                            # (2) 취소 안내 멘트 재생 (WAV 권장)
+                            try:
+                                await loop.run_in_executor(
+                                    None,
+                                    partial(tts_play, DEFAULT_CANCEL_GUIDE, "ko-KR", None, 1.0, 0.0, None, "LINEAR16")
+                                )
+                            except Exception as e:
+                                print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
+
+                            # (3) 취소 안내 종료 통지
+                            await send_json(websocket, {"type": "CANCEL_END"})
+
+                            # (4) 카운터 리셋(새 대화/주문을 위해)
+                            stt_fail_counts[websocket] = 0
+                        else:
+                            await send_json(websocket, {"type": "STT_ERR"})
+
                 except Exception as e:
                     print(f"[STT] 예외 발생: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
+                    await send_json(websocket, {"type": "STT_ERR", "message": str(e)})
 
             elif msg_type == "ALL_RESET":
                 print("▣ ▣ ▣ ALL_RESET!!!")
@@ -393,6 +426,7 @@ async def handle_frontend(websocket):
         print("클라이언트 연결 끊김")
     finally:
         clients.discard(websocket)
+        stt_fail_counts.pop(websocket, None)  # ← 무응답 카운트 정리
 
 # === 새로 추가: eye_tracking_worker와의 내부 통신 핸들러 ===
 async def handle_eye_worker(websocket):

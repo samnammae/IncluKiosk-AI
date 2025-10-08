@@ -16,6 +16,7 @@ import requests
 
 DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요." # 기본 안내 멘트
 DEFAULT_ERROR_GUIDE = "죄송합니다, 말씀을 정확히 인식하지 못했습니다. 다시 한번 말씀해 주시겠어요?" # 오류 안내 멘트
+DEFAULT_CANCEL_GUIDE = "인식되는 음성이 없어 주문이 취소되었습니다." # 무응답 2회 시 주문 취소 안내 멘트
 DEFAULT_PRE_SOUND = "start_recording.mp3" # STT 시작 안내 사운드 기본 경로
 
 STT_SILENCE_SEC = 1.2        # 침묵 종료 임계(초)
