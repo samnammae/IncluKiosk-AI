@@ -236,21 +236,21 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
     if stt_fail_count >= 2:
         print("[ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
         
-        await send_to_front(websocket, {"type": "ORDER_CANCEL"})
+        await send_to_front({"type": "ORDER_CANCEL"})
         
         try:
             await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
         except Exception as e:
             print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
         
-        await send_to_front(websocket, {"type": "CANCEL_END"})
+        await send_to_front({"type": "CANCEL_END"})
         
         stt_fail_count = 0
     
     # 1회 실패 시 오류 안내
     else:
         # 1. STT_ERR 전송
-        await send_to_front(websocket, {"type": "STT_ERR"})
+        await send_to_front({"type": "STT_ERR"})
         
         # 2. 오류 안내 TTS 재생
         try:
