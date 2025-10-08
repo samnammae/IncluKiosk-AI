@@ -31,7 +31,6 @@ from .guide_messages import (
     play_chat_guide_message,
     play_error_guide_message,
     play_cancel_guide_message,
-    stt_once_with_error_handling,
 )
 
 __all__ = [
