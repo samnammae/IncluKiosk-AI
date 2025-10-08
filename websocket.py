@@ -6,42 +6,23 @@ import sys
 from pathlib import Path
 import os
 from functools import partial
-
-from tts_stt import (
-    tts_play, 
-    find_input_device_index,
-    stt_once_with_error_handling,
-    play_chat_guide_message,
-    play_error_guide_message,
-    play_cancel_guide_message,
-    DEFAULT_CHAT_GUIDE,
-    DEFAULT_ERROR_GUIDE,
-    DEFAULT_CANCEL_GUIDE,
-    STT_SILENCE_SEC,
-    STT_MAX_DURATION,
-    STT_CALIB_SEC,
-    STT_SENSITIVITY,
-    STT_MIN_SPEECH_SEC,
-    STT_ENGINE,
-    STT_SAMPLE_RATE
-)
-stt_fail_counts = {}  # TTS 무응답(실패) 횟수 카운터
+import tts_stt
 
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
 
+stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
+
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_worker.py")
-EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")  # 파일명 변경
-TTS_STT_SCRIPT = str(BASE_DIR / "tts_stt.py")
+EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")
 
 workers = {"PIR": None}
 clients = set()  # 프론트엔드 클라이언트들
 
 # 런처 핸들
 eye_proc = None
-tts_proc = None
 
 # === 내부 통신용 === #
 eye_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
@@ -144,17 +125,7 @@ def start_eye():
     eye_proc = subprocess.Popen(["sudo", "-E", "python", EYE_SCRIPT],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
-
-def start_tts_stt():
-    global tts_proc
-    if is_running(tts_proc):
-        return
-    # 별도 프로세스로 실행 (요구 3,7 충족)
-    tts_proc = subprocess.Popen([PYTHON, TTS_STT_SCRIPT],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
-
-
+    
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):
     print("▣ ▣ ▣ CHAT_ORDER_ON 처리 로직 시작")
@@ -167,21 +138,141 @@ async def handle_chat_order_on(websocket=None):
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
     try:
-        await loop.run_in_executor(None, play_chat_guide_message)
+        await loop.run_in_executor(None, tts_stt.play_chat_guide_message)
         print("[TTS] 안내 종료 → TTS_OFF 전송")
         await send_to_front({"type": "TTS_OFF"})
     except Exception as e:
         print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
         await send_to_front({"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
 
+# ====== TTS/STT 핸들러 ======
+async def handle_tts_on(websocket, data):
+    """TTS_ON 메시지 처리"""
+    text = data.get("message") or data.get("text") or ""
+    if not str(text).strip():
+        await send_json(websocket, {"type": "TTS_ERROR", "message": "Missing TTS text"})
+        return
+    
+    lang = data.get("lang", "ko-KR")
+    voice = data.get("voice", None)
+    rate = float(data.get("speakingRate", 1.0))
+    pitch = float(data.get("pitch", 0.0))
+    enc = data.get("audioEncoding", "LINEAR16")
+    
+    loop = asyncio.get_running_loop()
+    try:
+        print(f"[TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
+        await loop.run_in_executor(
+            None,
+            partial(tts_stt.tts_play, text, lang, voice, rate, pitch, None, enc)
+        )
+        print("[TTS] 응답 종료 → TTS_OFF 전송")
+        await send_json(websocket, {"type": "TTS_OFF"})
+    except Exception as e:
+        print(f"[TTS] 오류: {e}", file=sys.stderr)
+        await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
+
+
+async def handle_stt_on(websocket, data, loop):
+    """STT_ON 메시지 처리"""
+    global stt_fail_count
+
+    # 1. 파라미터 추출
+    duration = int(data.get("duration", tts_stt.STT_MAX_DURATION))
+    sample_rate = int(data.get("sampleRate", tts_stt.STT_SAMPLE_RATE))
+    language_code = data.get("languageCode", "ko-KR")
+    device_idx = data.get("deviceIndex")
+    
+    # 2. 장치 자동 선택
+    if device_idx is None:
+        device_idx = tts_stt.find_input_device_index()
+        print(f"[STT] deviceIndex 자동 선택: {device_idx}")
+    
+    if device_idx is None:
+        await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
+        return
+    
+    # 3. 콜백 래퍼 생성
+    async def notify_stt_error():
+        await send_json(websocket, {"type": "STT_ERR"})
+    
+    async def notify_error_end():
+        await send_json(websocket, {"type": "ERR_END"})
+    
+    def sync_callback(coro):
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        future.result(timeout=5)
+    
+    # 4. STT 실행
+    def run_stt():
+        return tts_stt.stt_once_with_error_handling(
+            on_error_callback=lambda: sync_callback(notify_stt_error()),
+            on_error_end_callback=lambda: sync_callback(notify_error_end()),
+            error_guide_text=tts_stt.DEFAULT_ERROR_GUIDE,
+            error_guide_lang=language_code,
+            mode="auto",
+            duration=duration,
+            sample_rate=sample_rate,
+            language_code=language_code,
+            device=device_idx,
+            silence_sec=float(data.get("silence", tts_stt.STT_SILENCE_SEC)),
+            max_duration=float(data.get("maxDuration", tts_stt.STT_MAX_DURATION)),
+            calib_sec=float(data.get("calib", tts_stt.STT_CALIB_SEC)),
+            sensitivity=float(data.get("sensitivity", tts_stt.STT_SENSITIVITY)),
+            min_speech_sec=float(data.get("minSpeech", tts_stt.STT_MIN_SPEECH_SEC)),
+            engine=data.get("engine", tts_stt.STT_ENGINE)
+        )
+    
+    try:
+        print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
+        transcript, success = await loop.run_in_executor(None, run_stt)
+        
+        if success:
+            stt_fail_count = 0
+            print(f"[STT] 성공 결과: \"{transcript}\"")
+            await send_json(websocket, {"type": "STT_OFF", "message": transcript})
+        else:
+            await handle_stt_failure(websocket, loop)
+    
+    except Exception as e:
+        print(f"[STT] 예외 발생: {e}", file=sys.stderr)
+        await send_json(websocket, {"type": "STT_ERR", "message": str(e)})
+
+
+async def handle_stt_failure(websocket, loop):
+    """STT 실패 처리 (2회 실패 시 취소)"""
+    global stt_fail_count
+    stt_fail_count += 1 
+    print(f"[STT] 실패 처리 ({stt_fail_count}/2)")
+    
+    if stt_fail_count >= 2:
+        print("[ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
+        
+        # (1) ORDER_CANCEL 통지
+        await send_json(websocket, {"type": "ORDER_CANCEL"})
+        
+        # (2) 취소 안내 재생
+        try:
+            await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
+        except Exception as e:
+            print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
+        
+        # (3) 취소 안내 종료 통지
+        await send_json(websocket, {"type": "CANCEL_END"})
+        
+        # (4) 카운터 리셋
+        stt_fail_count = 0
+    else:
+        await send_json(websocket, {"type": "STT_ERR"})
+
 async def handle_frontend(websocket):
-    global eye_proc, tts_proc, frontend_ws
+    global eye_proc, frontend_ws, stt_fail_count
     print("클라이언트 연결됨")
     
     # ✅ 프론트 연결 저장
     frontend_ws = websocket
     clients.add(websocket)
-    stt_fail_counts[websocket] = 0
+    stt_fail_count = 0
 
     try:
         async for raw in websocket:
@@ -251,27 +342,6 @@ async def handle_frontend(websocket):
                 print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
                 await handle_chat_order_on(websocket)
 
-                # # 실행 중이던 optimized_code.py 종료
-                # eye_proc = stop_proc(eye_proc)
-                # subprocess.Popen([PYTHON, "-c", "print('STOP eye/fist workers stub')"])
-                # # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
-                # await send_to_eye_worker({"type": "STOP_ALL"})
-                # if USE_ACK:
-                #     await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
-
-                # guide_text = DEFAULT_CHAT_GUIDE  # tts_stt.py에 정의되어 있음
-                # loop = asyncio.get_running_loop()
-                # try:
-                #     print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
-                #     # WAV로 합성해서 aplay 사용 (mpg123 미설치 환경 회피)
-                #     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
-                # except Exception as e:
-                #     print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
-                #     await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
-                # else:
-                #     print("[TTS] 안내 종료 → TTS_OFF 전송")
-                #     await send_json(websocket, {"type": "TTS_OFF"})
-
             elif msg_type == "NORMAL_ORDER_ON":
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
                 # 아이트래킹 종료
@@ -295,116 +365,17 @@ async def handle_frontend(websocket):
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
                 print("▣ ▣ ▣ TTS_ON!!!")
-                text  = data.get("message") or data.get("text") or ""
-                if not str(text).strip():
-                    await send_json(websocket, {"type": "TTS_ERROR", "message": "Missing TTS text"})
-                    continue
-                lang  = data.get("lang", "ko-KR")
-                voice = data.get("voice", None)
-                rate  = float(data.get("speakingRate", 1.0))
-                pitch = float(data.get("pitch", 0.0))
-                enc   = data.get("audioEncoding", "LINEAR16")
-
-                loop = asyncio.get_running_loop()
-                try:
-                    print(f"[TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
-                    await loop.run_in_executor(None, partial(tts_play, text, lang, voice, rate, pitch, None, enc))
-                except Exception as e:
-                    print(f"[TTS] 오류: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
-                else:
-                    print("[TTS] 응답 종료 → TTS_OFF 전송")
-                    await send_json(websocket, {"type": "TTS_OFF"})
+                await handle_tts_on(websocket, data)
 
             elif msg_type == "STT_ON":
                 print("▣ ▣ ▣ STT_ON!!!")
-                duration = int(data.get("duration", STT_MAX_DURATION))
-                sample_rate = int(data.get("sampleRate", STT_SAMPLE_RATE))
-                language_code = data.get("languageCode", "ko-KR")
-                device_idx = data.get("deviceIndex", None)
-
-                if device_idx is None:
-                    device_idx = find_input_device_index()
-                    print(f"[STT] deviceIndex 자동 선택: {device_idx}")
-
-                if device_idx is None:
-                    await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
-                    continue
-
-                async def notify_stt_error():
-                    print("[WebSocket] STT_ERR 전송")
-                    await send_json(websocket, {"type": "STT_ERR"})
-
-                async def notify_error_end():
-                    print("[WebSocket] ERR_END 전송")
-                    await send_json(websocket, {"type": "ERR_END"})
-
-                def run_stt_with_error():
-                    def sync_callback(coro):
-                        future = asyncio.run_coroutine_threadsafe(coro, loop)
-                        future.result(timeout=5)
-                    return stt_once_with_error_handling(
-                        on_error_callback=lambda: sync_callback(notify_stt_error()),
-                        on_error_end_callback=lambda: sync_callback(notify_error_end()),
-                        error_guide_text=DEFAULT_ERROR_GUIDE,
-                        error_guide_lang=language_code,
-                        mode="auto",
-                        duration=duration,
-                        sample_rate=sample_rate,
-                        language_code=language_code,
-                        device=device_idx,
-                        silence_sec=float(data.get("silence", STT_SILENCE_SEC)),
-                        max_duration=float(data.get("maxDuration", STT_MAX_DURATION)),
-                        calib_sec=float(data.get("calib", STT_CALIB_SEC)),
-                        sensitivity=float(data.get("sensitivity", STT_SENSITIVITY)),
-                        min_speech_sec=float(data.get("minSpeech", STT_MIN_SPEECH_SEC)),
-                        engine=data.get("engine", STT_ENGINE)
-                    )
-
                 loop = asyncio.get_running_loop()
-                try:
-                    print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
-                    transcript, success = await loop.run_in_executor(None, run_stt_with_error)
-                    if success:
-                        # 성공하면 카운터 리셋
-                        stt_fail_counts[websocket] = 0
-                        print(f"[STT] 성공 결과: \"{transcript}\"")
-                        await send_json(websocket, {"type": "STT_OFF", "message": transcript})
-                    else:
-                        # 실패(무응답 포함) → 카운트 증가
-                        stt_fail_counts[websocket] = stt_fail_counts.get(websocket, 0) + 1
-                        print("[STT] 실패 처리 완료 (프론트 대기 중)")
-
-                        # 2회 도달 시 → ORDER_CANCEL + 취소 안내 TTS + CANCEL_END
-                        if stt_fail_counts[websocket] >= 2:
-                            print("[ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
-
-                            # (1) ORDER_CANCEL 통지
-                            await send_json(websocket, {"type": "ORDER_CANCEL"})
-
-                            # (2) 취소 안내 멘트 재생 (WAV 권장)
-                            try:
-                                await loop.run_in_executor(None, play_cancel_guide_message)
-                            except Exception as e:
-                                print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
-
-                            # (3) 취소 안내 종료 통지
-                            await send_json(websocket, {"type": "CANCEL_END"})
-
-                            # (4) 카운터 리셋(새 대화/주문을 위해)
-                            stt_fail_counts[websocket] = 0
-                        else:
-                            await send_json(websocket, {"type": "STT_ERR"})
-
-                except Exception as e:
-                    print(f"[STT] 예외 발생: {e}", file=sys.stderr)
-                    await send_json(websocket, {"type": "STT_ERR", "message": str(e)})
+                await handle_stt_on(websocket, data, loop)
 
             elif msg_type == "ALL_RESET":
                 print("▣ ▣ ▣ ALL_RESET!!!")
                 # 모든 종료
                 eye_proc = stop_proc(eye_proc)
-                tts_proc = stop_proc(tts_proc)
                 await stop_pir()
                 # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
                 await send_to_eye_worker({"type": "STOP_ALL"})
@@ -422,7 +393,7 @@ async def handle_frontend(websocket):
         print("클라이언트 연결 끊김")
     finally:
         clients.discard(websocket)
-        stt_fail_counts.pop(websocket, None)
+        stt_fail_count = 0
         frontend_ws = None
 
 # === 새로 추가: eye_tracking_worker와의 내부 통신 핸들러 ===
@@ -442,7 +413,7 @@ async def handle_eye_worker(websocket):
             if msg_type == "FIST_DETECTED":
                 print("▣ ▣ ▣ FIST_DETECTED(fron eye-worker)")
                 # 프론트엔드로 전달
-                await broadcast_json({"type": "FIST_DETECTED"})
+                await send_to_front({"type": "FIST_DETECTED"})
     
     except websockets.exceptions.ConnectionClosed:
         print("[Eye Worker] 연결 끊김")
