@@ -15,7 +15,7 @@ stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
-PIR_WORKER = str(BASE_DIR / "pir_worker.py")
+PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
 EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")
 
 workers = {"PIR": None}
@@ -298,7 +298,11 @@ async def handle_frontend(websocket):
 
             elif msg_type == "PIR_OFF":
                 print("▣ ▣ ▣ PIR_OFF!!!")
-                await stop_pir(websocket)
+                # 1) 내부 워커에게 PIR_OFF 먼저 통지
+                await send_to_eye_worker({"type": "PIR_OFF"})  # ← 내부 슬롯을 공용으로 활용
+                # # 2) (선택) 0.5~1.0s 대기 후, 아직 살아있으면 폴백 강제 종료
+                # await asyncio.sleep(1.0)
+                # await stop_pir(websocket)  # 워커가 정상종료하면 여기서 바로 no-op
 
                 # 임시로 높이조절 비활성화 (바로 캘리조정)
                 await send_json(websocket, {"type": "EYE_CALIB_ON"})
@@ -310,8 +314,8 @@ async def handle_frontend(websocket):
                 await broadcast_json({"type": "EYE_CALIB_ON"})
 
             elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED!!!")
-                await broadcast_json({"type": "PIR_DETECTED"})
+                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
+                await send_to_front({"type": "PIR_DETECTED"})
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
