@@ -313,9 +313,9 @@ async def handle_frontend(websocket):
                 # 3) 이제 보정 트리거 브로드캐스트
                 await broadcast_json({"type": "EYE_CALIB_ON"})
 
-            elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
-                await send_to_front({"type": "PIR_DETECTED"})
+            # elif msg_type == "PIR_DETECTED":
+            #     print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
+            #     await send_to_front({"type": "PIR_DETECTED"})
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
@@ -413,7 +413,11 @@ async def handle_internal_worker(websocket):
             print(f"[Eye Worker→Hub] 수신: {msg_type}")
             
             # === CASE 5-1: 주먹 감지 → 대화주문 ===
-            if msg_type == "FIST_DETECTED":
+            if msg_type == "PIR_DETECTED":
+                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
+                # 프론트엔드로 전달
+                await send_to_front({"type": "PIR_DETECTED"})
+            elif msg_type == "FIST_DETECTED":
                 print("▣ ▣ ▣ FIST_DETECTED(fron eye-worker)")
                 # 프론트엔드로 전달
                 await send_to_front({"type": "FIST_DETECTED"})
