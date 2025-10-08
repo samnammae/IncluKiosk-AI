@@ -4,7 +4,7 @@
 DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요."
 DEFAULT_ERROR_GUIDE = "죄송합니다, 말씀을 정확히 인식하지 못했습니다. 다시 한번 말씀해 주시겠어요?"
 DEFAULT_CANCEL_GUIDE = "인식되는 음성이 없어 주문이 취소되었습니다."
-DEFAULT_PRE_SOUND = "start_recording.mp3"
+DEFAULT_PRE_SOUND = "/start_recording.mp3"
 
 # STT 설정
 STT_SILENCE_SEC = 1.2
