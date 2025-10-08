@@ -11,6 +11,9 @@ from tts_stt import (
     tts_play, 
     find_input_device_index,
     stt_once_with_error_handling,
+    play_chat_guide_message,
+    play_error_guide_message,
+    play_cancel_guide_message,
     DEFAULT_CHAT_GUIDE,
     DEFAULT_ERROR_GUIDE,
     DEFAULT_CANCEL_GUIDE,
@@ -22,8 +25,7 @@ from tts_stt import (
     STT_ENGINE,
     STT_SAMPLE_RATE
 )
-# 프론트엔드별 STT 무응답(실패) 횟수 카운터
-stt_fail_counts = {}  # key=websocket, value=int
+stt_fail_counts = {}  # TTS 무응답(실패) 횟수 카운터
 
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
@@ -41,8 +43,9 @@ clients = set()  # 프론트엔드 클라이언트들
 eye_proc = None
 tts_proc = None
 
-# === 새로 추가: eye_tracking_worker와의 내부 통신용 ===
+# === 내부 통신용 === #
 eye_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
+frontend_ws = None    # 프론트엔드의 WebSocket 연결
 
 USE_ACK = False  # 필요 없으면 False
 atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어액추에이터 높이 낮추기
@@ -64,14 +67,22 @@ async def broadcast_json(payload: dict):
     for ws in dead:
         clients.discard(ws)
 
-# === 새로 추가: eye_tracking_worker로 메시지 전송 ===
+# === eye_tracking_worker로 메시지 전송 === #
 async def send_to_eye_worker(payload: dict):
-    """eye_tracking_worker로 메시지 전송"""
     if eye_worker_ws:
         try:
             await eye_worker_ws.send(json.dumps(payload, ensure_ascii=False))
         except Exception as e:
             print(f"[Hub→Eye] 전송 실패: {e}")
+
+# === front로 메시지 전송 === #
+async def send_to_front(payload: dict):
+    if frontend_ws:
+        try:
+            await frontend_ws.send(json.dumps(payload, ensure_ascii=False))
+        except Exception as e:
+            print(f"[Hub→Front] 전송 실패: {e}")
+            clients.discard(frontend_ws)
 
 async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
@@ -143,47 +154,35 @@ def start_tts_stt():
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
 
-# =================================
 
-# === CHAT_ORDER_ON 처리 로직을 별도 함수로 분리 ===
+# 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):
-    """CHAT_ORDER_ON 공통 처리 로직"""
-    print("▣ ▣ ▣ CHAT_ORDER_ON 처리 시작")
+    print("▣ ▣ ▣ CHAT_ORDER_ON 처리 로직 시작")
     
     # 1. 아이트래킹 정지
     global eye_proc
     eye_proc = stop_proc(eye_proc)
     await send_to_eye_worker({"type": "STOP_ALL"})
     
-    # 2. ACK 전송 (websocket이 있으면)
-    if USE_ACK and websocket:
-        await send_json(websocket, {"type": "CHAT_ORDER_ON_ACK"})
-    
-    # 3. 안내 TTS 재생
-    guide_text = DEFAULT_CHAT_GUIDE
+    # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
     try:
-        print(f"[TTS] 안내 시작: \"{guide_text}\" (WAV)")
-        await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
+        await loop.run_in_executor(None, play_chat_guide_message)
         print("[TTS] 안내 종료 → TTS_OFF 전송")
-        # websocket이 있으면 특정 클라이언트에게, 없으면 브로드캐스트
-        if websocket:
-            await send_json(websocket, {"type": "TTS_OFF"})
-        else:
-            await broadcast_json({"type": "END_GUIDE"})
+        await send_to_front({"type": "TTS_OFF"})
     except Exception as e:
         print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
-        if websocket:
-            await send_json(websocket, {"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
+        await send_to_front({"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
 
-
-
-# === 수정: handle_client → handle_frontend (프론트엔드 전용) ===
 async def handle_frontend(websocket):
-    global eye_proc, tts_proc
+    global eye_proc, tts_proc, frontend_ws
     print("클라이언트 연결됨")
+    
+    # ✅ 프론트 연결 저장
+    frontend_ws = websocket
     clients.add(websocket)
     stt_fail_counts[websocket] = 0
+
     try:
         async for raw in websocket:
             print(f"받은 메시지: {raw}")
@@ -385,10 +384,7 @@ async def handle_frontend(websocket):
 
                             # (2) 취소 안내 멘트 재생 (WAV 권장)
                             try:
-                                await loop.run_in_executor(
-                                    None,
-                                    partial(tts_play, DEFAULT_CANCEL_GUIDE, "ko-KR", None, 1.0, 0.0, None, "LINEAR16")
-                                )
+                                await loop.run_in_executor(None, play_cancel_guide_message)
                             except Exception as e:
                                 print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
 
@@ -426,7 +422,8 @@ async def handle_frontend(websocket):
         print("클라이언트 연결 끊김")
     finally:
         clients.discard(websocket)
-        stt_fail_counts.pop(websocket, None)  # ← 무응답 카운트 정리
+        stt_fail_counts.pop(websocket, None)
+        frontend_ws = None
 
 # === 새로 추가: eye_tracking_worker와의 내부 통신 핸들러 ===
 async def handle_eye_worker(websocket):
@@ -443,30 +440,15 @@ async def handle_eye_worker(websocket):
             
             # === CASE 5-1: 주먹 감지 → 대화주문 ===
             if msg_type == "FIST_DETECTED":
-                print("▣ ▣ ▣ FIST_DETECTED → CHAT_ORDER_ON")
+                print("▣ ▣ ▣ FIST_DETECTED(fron eye-worker)")
                 # 프론트엔드로 전달
-                await broadcast_json({"type": "CHAT_ORDER_ON"})
-                # 동일한 처리 로직 실행
-                await handle_chat_order_on() 
-                # # eye_tracking_worker 정지
-                # await send_to_eye_worker({"type": "STOP_ALL"})
-                # # 안내 TTS 자동 재생
-                # guide_text = DEFAULT_CHAT_GUIDE
-                # loop = asyncio.get_running_loop()
-                # try:
-                #     print(f"[TTS] 안내 시작: \"{guide_text}\"")
-                #     await loop.run_in_executor(None, partial(tts_play, guide_text, "ko-KR", None, 1.0, 0.0, None, "LINEAR16"))
-                #     print("[TTS] 안내 종료 → END_GUIDE 브로드캐스트")
-                #     await broadcast_json({"type": "END_GUIDE"})
-                # except Exception as e:
-                #     print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+                await broadcast_json({"type": "FIST_DETECTED"})
     
     except websockets.exceptions.ConnectionClosed:
         print("[Eye Worker] 연결 끊김")
     finally:
         eye_worker_ws = None
 
-# === 수정: main 함수에서 두 개의 서버 실행 ===
 async def main():
     print("=" * 60)
     print("서버 시작됨")

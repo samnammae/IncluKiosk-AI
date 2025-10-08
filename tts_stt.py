@@ -13,7 +13,6 @@ import queue
 
 import requests
 
-
 DEFAULT_CHAT_GUIDE = "안녕하세요. 음성으로 주문을 도와드릴게요." # 기본 안내 멘트
 DEFAULT_ERROR_GUIDE = "죄송합니다, 말씀을 정확히 인식하지 못했습니다. 다시 한번 말씀해 주시겠어요?" # 오류 안내 멘트
 DEFAULT_CANCEL_GUIDE = "인식되는 음성이 없어 주문이 취소되었습니다." # 무응답 2회 시 주문 취소 안내 멘트
@@ -38,16 +37,6 @@ except Exception as e:
         "google-cloud-texttospeech, google-cloud-speech 패키지를 설치하세요.\n"
         "pip install google-cloud-texttospeech google-cloud-speech"
     ) from e
-
-# =========================
-# 공용 유틸
-# =========================
-def _mask_secret(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    if len(s) <= 8:
-        return "*" * len(s)
-    return f"{s[:4]}{'*'*(len(s)-8)}{s[-4:]}"
 
 # =========================
 # Naver Clova Speech Recognition (CSR) helper
@@ -120,6 +109,72 @@ def _stt_naver_csr_from_wav(
 
     return text or ""
 
+# 주문 시작 안내 메시지 출력 함수
+def play_chat_guide_message(
+    text: str = DEFAULT_CHAT_GUIDE,
+    lang: str = "ko-KR",
+    voice: Optional[str] = None,
+    speaking_rate: float = 1.0,
+    pitch: float = 0.0,
+    audio_encoding: str = "LINEAR16"
+) -> str:
+    print(f"[TTS] 안내 시작: \"{text}\" ({audio_encoding})")
+    result = tts_play(
+        text=text,
+        lang=lang,
+        voice=voice,
+        speaking_rate=speaking_rate,
+        pitch=pitch,
+        out_path=None,
+        audio_encoding=audio_encoding
+    )
+    print("[TTS] 안내 종료")
+    return result
+
+# 음성 인식 오류 안내 메시지 출력 함수
+def play_error_guide_message(
+    text: str = DEFAULT_ERROR_GUIDE,
+    lang: str = "ko-KR",
+    voice: Optional[str] = None,
+    speaking_rate: float = 1.0,
+    pitch: float = 0.0,
+    audio_encoding: str = "LINEAR16"
+) -> str:
+    print(f"[TTS] 안내 시작: \"{text}\" ({audio_encoding})")
+    result = tts_play(
+        text=text,
+        lang=lang,
+        voice=voice,
+        speaking_rate=speaking_rate,
+        pitch=pitch,
+        out_path=None,
+        audio_encoding=audio_encoding
+    )
+    print("[TTS] 안내 종료")
+    return result
+
+# 주문 취소 안내 메시지 출력 함수
+def play_cancel_guide_message(
+    text: str = DEFAULT_CANCEL_GUIDE,
+    lang: str = "ko-KR",
+    voice: Optional[str] = None,
+    speaking_rate: float = 1.0,
+    pitch: float = 0.0,
+    audio_encoding: str = "LINEAR16"
+) -> str:
+    print(f"[TTS] 안내 시작: \"{text}\" ({audio_encoding})")
+    result = tts_play(
+        text=text,
+        lang=lang,
+        voice=voice,
+        speaking_rate=speaking_rate,
+        pitch=pitch,
+        out_path=None,
+        audio_encoding=audio_encoding
+    )
+    print("[TTS] 안내 종료")
+    return result
+
 
 # =========================
 # 오디오 입출력 유틸
@@ -132,7 +187,6 @@ def list_input_devices() -> List[dict]:
         if d.get("max_input_channels", 0) > 0:
             input_devs.append({"index": idx, "name": d["name"], **d})
     return input_devs
-
 
 def find_input_device_index(prefer_keywords: tuple = ("usb", "mic", "seeed", "respeaker")) -> Optional[int]:
     """
@@ -182,7 +236,6 @@ def record_audio(duration: int = 5, sample_rate: int = 16000, channels: int = 1,
     wav_write(wav_path, sample_rate, audio)
     print(f"[STT] (fixed) WAV saved: {wav_path}  bytes={os.path.getsize(wav_path)}")
     return wav_path
-
 
 def record_until_silence(
     sample_rate: int = STT_SAMPLE_RATE,
@@ -285,7 +338,6 @@ def record_until_silence(
         print(f"[STT] (auto) WAV saved: {wav_path}  dur={dur:.2f}s  bytes={os.path.getsize(wav_path)}")
         return wav_path
 
-
 def _play_audio_file(path: str) -> None:
     """
     파일 확장자에 맞춰 재생.
@@ -325,7 +377,6 @@ def _play_if_exists(path: Optional[str], pause_after: float = 0.25) -> None:
     else:
         # 조용히 건너뜀
         print(f"[SND] 프리사운드 없음(건너뜀): {path}")
-
 
 # =========================
 # TTS
@@ -534,11 +585,10 @@ def stt_once_with_error_handling(
             # 2. 오류 안내 음성 재생
             try:
                 print(f"[STT] 오류 안내 TTS 재생: \"{error_guide_text}\"")
-                tts_play(
+                play_error_guide_message(
                     text=error_guide_text,
                     lang=error_guide_lang,
-                    voice=error_guide_voice,
-                    audio_encoding="LINEAR16"  # WAV로 재생
+                    voice=error_guide_voice
                 )
                 print("[STT] 오류 안내 TTS 재생 완료")
             except Exception as e:
@@ -568,11 +618,10 @@ def stt_once_with_error_handling(
                 pass
         
         try:
-            tts_play(
+            play_error_guide_message(
                 text=error_guide_text,
                 lang=error_guide_lang,
-                voice=error_guide_voice,
-                audio_encoding="LINEAR16"
+                voice=error_guide_voice
             )
         except Exception:
             pass
