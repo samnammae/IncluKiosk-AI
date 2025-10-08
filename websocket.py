@@ -25,7 +25,7 @@ clients = set()  # 프론트엔드 클라이언트들
 eye_proc = None
 
 # === 내부 통신용 === #
-eye_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
+internal_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
 frontend_ws = None    # 프론트엔드의 WebSocket 연결
 
 USE_ACK = False  # 필요 없으면 False
@@ -48,11 +48,11 @@ async def broadcast_json(payload: dict):
     for ws in dead:
         clients.discard(ws)
 
-# === eye_tracking_worker로 메시지 전송 === #
-async def send_to_eye_worker(payload: dict):
-    if eye_worker_ws:
+# === 라즈베리파이 내부 워커에게 메시지 전송 === #
+async def send_to_internal_worker(payload: dict):
+    if internal_worker_ws:
         try:
-            await eye_worker_ws.send(json.dumps(payload, ensure_ascii=False))
+            await internal_worker_ws.send(json.dumps(payload, ensure_ascii=False))
         except Exception as e:
             print(f"[Hub→Eye] 전송 실패: {e}")
 
@@ -133,7 +133,7 @@ async def handle_chat_order_on(websocket=None):
     # 1. 아이트래킹 정지
     global eye_proc
     eye_proc = stop_proc(eye_proc)
-    await send_to_eye_worker({"type": "STOP_ALL"})
+    await send_to_internal_worker({"type": "STOP_ALL"})
     
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
@@ -299,7 +299,7 @@ async def handle_frontend(websocket):
             elif msg_type == "PIR_OFF":
                 print("▣ ▣ ▣ PIR_OFF!!!")
                 # 1) 내부 워커에게 PIR_OFF 먼저 통지
-                await send_to_eye_worker({"type": "PIR_OFF"})  # ← 내부 슬롯을 공용으로 활용
+                await send_to_internal_worker({"type": "PIR_OFF"})  # ← 내부 슬롯을 공용으로 활용
                 # # 2) (선택) 0.5~1.0s 대기 후, 아직 살아있으면 폴백 강제 종료
                 # await asyncio.sleep(1.0)
                 # await stop_pir(websocket)  # 워커가 정상종료하면 여기서 바로 no-op
@@ -327,7 +327,7 @@ async def handle_frontend(websocket):
                 # 3) 이제 보정 트리거 브로드캐스트
                 await broadcast_json({"type": "EYE_CALIB_ON"})
                 # === 새로 추가: eye_tracking_worker로 캘리브레이션 명령 전송 ===
-                await send_to_eye_worker({"type": "EYE_CALIB_ON"})
+                await send_to_internal_worker({"type": "EYE_CALIB_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_CALIB_ON_ACK"})
 
@@ -336,7 +336,7 @@ async def handle_frontend(websocket):
                 # 마우스 제어 '강제 ON'
                 await broadcast_json({"type": "MOUSE_ON"})
                 # === 새로 추가: eye_tracking_worker로 마우스 ON 명령 전송 ===
-                await send_to_eye_worker({"type": "MOUSE_ON"})
+                await send_to_internal_worker({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
 
@@ -350,7 +350,7 @@ async def handle_frontend(websocket):
                 # 아이트래킹 종료
                 eye_proc = stop_proc(eye_proc)
                 # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
-                await send_to_eye_worker({"type": "STOP_ALL"})
+                await send_to_internal_worker({"type": "STOP_ALL"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
@@ -360,8 +360,8 @@ async def handle_frontend(websocket):
                 await broadcast_json({"type": "EYE_ORDER_ON"})
                 await broadcast_json({"type": "MOUSE_ON"})
                 # === 새로 추가: eye_tracking_worker로 명령 전송 ===
-                await send_to_eye_worker({"type": "EYE_ORDER_ON"})
-                await send_to_eye_worker({"type": "MOUSE_ON"})
+                await send_to_internal_worker({"type": "EYE_ORDER_ON"})
+                await send_to_internal_worker({"type": "MOUSE_ON"})
                 if USE_ACK:
                     await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
@@ -381,7 +381,7 @@ async def handle_frontend(websocket):
                 eye_proc = stop_proc(eye_proc)
                 await stop_pir()
                 # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
-                await send_to_eye_worker({"type": "STOP_ALL"})
+                await send_to_internal_worker({"type": "STOP_ALL"})
                 # PIR 시작
                 await start_pir()
                 if USE_ACK:
@@ -399,11 +399,11 @@ async def handle_frontend(websocket):
         stt_fail_count = 0
         frontend_ws = None
 
-# === 새로 추가: eye_tracking_worker와의 내부 통신 핸들러 ===
-async def handle_eye_worker(websocket):
+# === 새로 추가: 라즈베리파이 내부 통신 핸들러 ===
+async def handle_internal_worker(websocket):
     """eye_tracking_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global eye_worker_ws
-    eye_worker_ws = websocket
+    global internal_worker_ws
+    internal_worker_ws = websocket
     print("[Eye Worker] 내부 연결됨")
     
     try:
@@ -421,7 +421,7 @@ async def handle_eye_worker(websocket):
     except websockets.exceptions.ConnectionClosed:
         print("[Eye Worker] 연결 끊김")
     finally:
-        eye_worker_ws = None
+        internal_worker_ws = None
 
 async def main():
     print("=" * 60)
@@ -434,7 +434,7 @@ async def main():
     frontend_server = websockets.serve(handle_frontend, "0.0.0.0", 8765)
     
     # eye_tracking_worker용 내부 서버 (포트 8766)
-    internal_server = websockets.serve(handle_eye_worker, "localhost", 8766)
+    internal_server = websockets.serve(handle_internal_worker, "localhost", 8766)
     
     async with frontend_server, internal_server:
         await asyncio.Future()
