@@ -57,5 +57,4 @@ __all__ = [
     "play_chat_guide_message",
     "play_error_guide_message",
     "play_cancel_guide_message",
-    "stt_once_with_error_handling",
 ]
