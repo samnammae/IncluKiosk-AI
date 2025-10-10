@@ -104,7 +104,7 @@ def moveUp(steps: int = DEFAULT_STEP):
         print("[ACTUATOR] 🚫 최대 높이 도달, 이동 중단")
         return
 
-    GPIO.output(DIR, GPIO.HIGH)   # 위쪽 방향
+    GPIO.output(DIR, GPIO.LOW)   # 위쪽 방향 (edited: HIGH > LOW)
     GPIO.output(ENA, GPIO.HIGH)   # 모터 활성화
     print(f"[ACTUATOR] ↑ Move UP {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
 
@@ -135,7 +135,7 @@ def moveDown(steps: int = DEFAULT_STEP):
         print("[ACTUATOR] 🚫 최소 높이 도달, 이동 중단")
         return
 
-    GPIO.output(DIR, GPIO.LOW)   # 아래쪽 방향
+    GPIO.output(DIR, GPIO.HIGH)   # 아래쪽 방향 (edited: LOW > HIGH)
     GPIO.output(ENA, GPIO.HIGH)  # 모터 활성화
     print(f"[ACTUATOR] ↓ Move DOWN {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
 

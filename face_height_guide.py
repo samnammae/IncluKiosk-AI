@@ -151,12 +151,10 @@ def main():
                     state = "center"; stable_count += 1
                 elif diff < 0:
                     state = "up";     stable_count = 0   # 얼굴이 중앙보다 위 → 카메라 내려야
-                    # moveUp(10)    #엑추에이터 위로 이동
-                    moveDown(10)
+                    moveUp(10)    #엑추에이터 위로 이동
                 else:
                     state = "down";   stable_count = 0   # 얼굴이 중앙보다 아래 → 카메라 올려야
-                    # moveDown(10)     #엑추에이터 아래로 이동 10이면 10스텝, 100이면 100스텝
-                    moveUp(10)
+                    moveDown(10)     #엑추에이터 아래로 이동 10이면 10스텝, 100이면 100스텝
             else:
                 # 얼굴 없음 → EdgeTPU 사람 박스로 힌트
                 person = detect_person_bbox(interpreter, labels, frame)
@@ -170,12 +168,10 @@ def main():
                     # 경계 접촉이면 방향 확신 강화
                     if y0 <= 0.05:
                         state = "hint_up"     # 상단에 걸림 → 키 큼 → 카메라 위로
-                        # moveUp(100)    #엑추에이터 위로 이동
-                        moveDown(100)
+                        moveUp(100)    #엑추에이터 위로 이동
                     elif y1 >= 0.95:
                         state = "hint_down"   # 하단에 걸림 → 키 작음 → 카메라 아래로
-                        # moveDown(100) #엑추에이터 아래로 이동
-                        moveUp(100)
+                        moveDown(100) #엑추에이터 아래로 이동
                     else:
                         # 중앙 기준으로 간단 판정
                         state = "up" if y_center < target_y - deadband else "down"
