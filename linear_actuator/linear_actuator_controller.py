@@ -99,6 +99,7 @@ def moveUp(steps: int = DEFAULT_STEP):
     - 자동으로 최대 높이 검증 수행
     """
     global CUR_HEIGHT_STEP
+    GPIO.output(ENA, GPIO.HIGH)
 
     if exceed_max_height():
         print("[ACTUATOR] 🚫 최대 높이 도달, 이동 중단")
@@ -122,6 +123,8 @@ def moveUp(steps: int = DEFAULT_STEP):
         _write_height_to_file(CUR_HEIGHT_STEP)
 
     print(f"[ACTUATOR] ↑ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
+    GPIO.output(ENA, GPIO.LOW)
+
 
 # === 아래로 이동 ===
 def moveDown(steps: int = DEFAULT_STEP):
@@ -131,6 +134,8 @@ def moveDown(steps: int = DEFAULT_STEP):
     - 자동으로 최소 높이 검증 수행
     """
     global CUR_HEIGHT_STEP
+    GPIO.output(ENA, GPIO.HIGH)
+    
     if exceed_min_height():
         print("[ACTUATOR] 🚫 최소 높이 도달, 이동 중단")
         return
@@ -155,6 +160,8 @@ def moveDown(steps: int = DEFAULT_STEP):
 
     CUR_HEIGHT_STEP = max(0, CUR_HEIGHT_STEP)
     print(f"[ACTUATOR] ↓ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
+    GPIO.output(ENA, GPIO.LOW)
+
 
 # === 프로그램 종료 시 원점 복귀 ===
 def return_to_start():
