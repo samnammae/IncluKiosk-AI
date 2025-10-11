@@ -17,12 +17,14 @@ PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
 EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")
+HEIGHT_WORKER = str(BASE_DIR / "height_worker.py")
 
 workers = {"PIR": None}
 clients = set()  # 프론트엔드 클라이언트들
 
 # 런처 핸들
 eye_proc = None
+height_proc = None
 
 # === 내부 통신용 === #
 internal_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
@@ -65,6 +67,7 @@ async def send_to_front(payload: dict):
             print(f"[Hub→Front] 전송 실패: {e}")
             clients.discard(frontend_ws)
 
+# === pir 센서 관련 ===
 async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
         if USE_ACK and websocket:
@@ -99,6 +102,41 @@ async def stop_pir(websocket=None):
 async def clear_pir_state_and_notify_frontend():
     workers["PIR"] = None
     await broadcast_json({"type": "PIR_OFF"})
+
+# === 높이 조절 관련 ===
+async def start_height_worker():
+    global height_proc
+    if is_running(height_proc):
+        return
+    
+    print("[Height] 워커 시작")
+    height_proc = subprocess.Popen(
+        ["sudo", "-E", "python", HEIGHT_WORKER],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+async def stop_height_worker():
+    """높이 조절 중단 (graceful)"""
+    global height_proc
+    if not is_running(height_proc):
+        return
+    
+    # WebSocket으로 중단 명령 전송
+    await send_to_internal_worker({"type": "HEIGHT_SET_OFF"})
+    
+    # 프로세스 종료 대기 (최대 5초)
+    try:
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(None, height_proc.wait),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        print("[Height] 5초 대기 후 강제 종료")
+        height_proc.terminate()
+    finally:
+        height_proc = None
 
 # ====== 프로세스 런처 유틸 ======
 def is_running(p):
@@ -310,7 +348,12 @@ async def handle_frontend(websocket):
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
                 print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
+                await start_height_worker()
 
+            elif msg_type == "HEIGHT_SET_CANCEL":
+                print("▣ ▣ ▣ HEIGHT_SET_CANCEL (사용자 중단)")
+                await stop_height_worker()
+                await send_to_front({"type": "HEIGHT_SET_CANCEL"})
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
@@ -416,9 +459,19 @@ async def handle_internal_worker(websocket):
                 print("▣ ▣ ▣ FIST_DETECTED(fron eye-worker)")
                 # 프론트엔드로 전달
                 await send_to_front({"type": "FIST_DETECTED"})
-    
+
+            elif msg_type == "HEIGHT_SET_END":
+                print("[Hub] ✅ 높이 조절 완료")
+                await send_to_front({"type": "HEIGHT_SET_END"})
+                height_proc = None  # 프로세스 핸들 정리
+
+            elif msg_type == "HEIGHT_SET_TIMEOUT":
+                print("[Hub] ⚠️ 높이 조절 타임아웃")
+                await send_to_front({"type": "HEIGHT_SET_TIMEOUT"})
+                height_proc = None
+                
     except websockets.exceptions.ConnectionClosed:
-        print("[Eye Worker] 연결 끊김")
+        print("[Internal Worker] 연결 끊김")
     finally:
         internal_worker_ws = None
 

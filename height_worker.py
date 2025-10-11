@@ -22,12 +22,18 @@ PRINT_EVERY = 0.15
 WITH_FACE = 100
 WITHOUT_FACE = 500
 
+AUTO_EXIT_STABLE_TIME = 3  # 3초간 안정화 유지하면 자동 종료
+NO_DETECTION_TIMEOUT = 30   # 30초간 사용자 미감지 시 타임아웃
+
 # EdgeTPU person detector 모델/라벨
 EDGETPU_MODEL = "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite"
 EDGETPU_LABELS = "coco_labels.txt"
 PERSON_LABEL = "person"
 PERSON_SCORE_TH = 0.4
 # ===================
+
+# WebSocket 설정
+HUB_WS_URL = "ws://localhost:8766"
 
 mp_face = mp.solutions.face_detection
 
