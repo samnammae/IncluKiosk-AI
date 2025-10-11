@@ -7,7 +7,9 @@ from linear_actuator.linear_actuator_controller import (
     init_motor,
     cleanup_motor,
     moveUp, 
-    moveDown
+    moveDown,
+    exceed_max_height,
+    exceed_min_height 
 )
 
 # ====== 설정 ======
@@ -178,10 +180,18 @@ def track_height():
                     state = "up"
                     stable_count = 0   # 얼굴이 중앙보다 위 → 카메라 내려야
                     moveUp(WITH_FACE)    # 액추에이터 위로 이동
+                    
+                    if exceed_max_height():
+                        print("🚫 최대 높이 도달 → 높이 조절 종료")
+                        break
                 else:
                     state = "down"
                     stable_count = 0   # 얼굴이 중앙보다 아래 → 카메라 올려야
                     moveDown(WITH_FACE)     # 액추에이터 아래로 이동
+                    
+                    if exceed_min_height():
+                        print("🚫 최소 높이 도달 → 높이 조절 종료")
+                        break
             else:
                 # 얼굴 없음 → EdgeTPU 사람 박스로 힌트
                 person = detect_person_bbox(interpreter, labels, frame)
@@ -189,6 +199,10 @@ def track_height():
                 if person is None:
                     state = "hint_down"   # 화면에 사람 박스도 없으면 카메라가 너무 위일 확률 → 아래로 스캔
                     moveDown(WITHOUT_FACE) # 액추에이터 아래로 이동
+                    
+                    if exceed_min_height():
+                        print("🚫 최소 높이 도달 → 높이 조절 종료")
+                        break
                 else:
                     detection_found = True  # 사람 박스는 감지됨
                     x0, y0, x1, y1 = person
@@ -197,9 +211,17 @@ def track_height():
                     if y0 <= 0.05:
                         state = "hint_up"     # 상단에 걸림 → 키 큼 → 카메라 위로
                         moveUp(WITHOUT_FACE)    # 액추에이터 위로 이동
+                        
+                        if exceed_max_height():
+                            print("🚫 최대 높이 도달 → 높이 조절 종료")
+                            break
                     elif y1 >= 0.95:
                         state = "hint_down"   # 하단에 걸림 → 키 작음 → 카메라 아래로
                         moveDown(WITHOUT_FACE) # 액추에이터 아래로 이동
+                        
+                        if exceed_min_height():
+                            print("🚫 최소 높이 도달 → 높이 조절 종료")
+                            break
                     else:
                         # 중앙 기준으로 간단 판정
                         state = "up" if y_center < target_y - deadband else "down"
@@ -208,7 +230,7 @@ def track_height():
             if detection_found:
                 last_detection_time = time.time()
             
-            # 타임아웃 체크 (30초간 미감지)
+            # 타임아웃 체크 (15초간 미감지)
             if time.time() - last_detection_time > NO_DETECTION_TIMEOUT:
                 print(f"⚠️ {NO_DETECTION_TIMEOUT}초간 사용자 미감지 → 높이 조절 타임아웃")
                 break  # 루프 종료 (finally에서 타임아웃 메시지 전송)
@@ -244,8 +266,6 @@ def track_height():
                     print("No face/person hint. Sweep to search…")
                 last_print_t = now
                 last_state = state
-            
-            time.sleep(0.03)  # 약 30 FPS
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt - 높이 조절 중단")
@@ -255,8 +275,13 @@ def track_height():
         # cv2.destroyAllWindows()
         cleanup_motor()         # GPIO 정리 및 리니어 액추에이터 모터 정리
         
-        # 타임아웃인지 정상 완료인지 판단
-        return "timeout" if (time.time() - last_detection_time > NO_DETECTION_TIMEOUT) else "complete"
+        # 종료 이유 판단: 한계 도달 / 타임아웃 / 정상 완료
+        if exceed_max_height() or exceed_min_height():
+            return "limit_reached"
+        elif time.time() - last_detection_time > NO_DETECTION_TIMEOUT:
+            return "timeout"
+        else:
+            return "complete"
 
 async def ws_client():
     """WebSocket 클라이언트 - Hub와 통신"""
@@ -297,6 +322,9 @@ async def ws_client():
             if should_stop:
                 await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
                 print("[Height Worker] 중단됨 → CANCELLED 전송")
+            elif result_status == "limit_reached":
+                await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
+                print("[Height Worker] 한계 도달 → END 전송 (정상 종료)")
             elif result_status == "timeout":
                 await ws.send(json.dumps({"type": "HEIGHT_SET_TIMEOUT"}))
                 print("[Height Worker] 타임아웃 → TIMEOUT 전송")
