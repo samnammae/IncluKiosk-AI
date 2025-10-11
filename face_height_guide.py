@@ -19,6 +19,9 @@ EMA_ALPHA = 0.3
 STABLE_FRAMES = 10
 PRINT_EVERY = 0.15
 
+WITH_FACE = 100
+WITHOUT_FACE = 500
+
 # EdgeTPU person detector 모델/라벨
 EDGETPU_MODEL = "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite"
 EDGETPU_LABELS = "coco_labels.txt"
@@ -151,27 +154,27 @@ def main():
                     state = "center"; stable_count += 1
                 elif diff < 0:
                     state = "up";     stable_count = 0   # 얼굴이 중앙보다 위 → 카메라 내려야
-                    moveUp(10)    #엑추에이터 위로 이동
+                    moveUp(WITH_FACE)    #엑추에이터 위로 이동
                 else:
                     state = "down";   stable_count = 0   # 얼굴이 중앙보다 아래 → 카메라 올려야
-                    moveDown(10)     #엑추에이터 아래로 이동 10이면 10스텝, 100이면 100스텝
+                    moveDown(WITH_FACE)     #엑추에이터 아래로 이동 10이면 10스텝, 100이면 100스텝
             else:
                 # 얼굴 없음 → EdgeTPU 사람 박스로 힌트
                 person = detect_person_bbox(interpreter, labels, frame)
                 stable_count = 0
                 if person is None:
                     state = "hint_down"   # 화면에 사람 박스도 없으면 카메라가 너무 위일 확률↑ → 아래로 스캔
-                    moveDown(200) # 엑추에이터 아래로 이동
+                    moveDown(WITHOUT_FACE) # 엑추에이터 아래로 이동
                 else:
                     x0, y0, x1, y1 = person
                     y_center = (y0 + y1) * 0.5
                     # 경계 접촉이면 방향 확신 강화
                     if y0 <= 0.05:
                         state = "hint_up"     # 상단에 걸림 → 키 큼 → 카메라 위로
-                        moveUp(100)    #엑추에이터 위로 이동
+                        moveUp(WITHOUT_FACE)    #엑추에이터 위로 이동
                     elif y1 >= 0.95:
                         state = "hint_down"   # 하단에 걸림 → 키 작음 → 카메라 아래로
-                        moveDown(100) #엑추에이터 아래로 이동
+                        moveDown(WITHOUT_FACE) #엑추에이터 아래로 이동
                     else:
                         # 중앙 기준으로 간단 판정
                         state = "up" if y_center < target_y - deadband else "down"
