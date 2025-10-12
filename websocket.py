@@ -147,12 +147,17 @@ async def start_height_worker():
     height_set_processing = True
     
     print("[Height] 워커 시작")
+    
+    # 🆕 에러 로그 파일에 기록
+    log_file = open("/tmp/height_worker.log", "w")
+    
     height_proc = subprocess.Popen(
         ["sudo", "-E", PYTHON, HEIGHT_WORKER],
-        stdout=sys.stdout,  # 표준 출력으로 에러 확인
-        stderr=sys.stderr   # 표준 에러로 에러 확인
+        stdout=log_file,  # 표준 출력으로 에러 확인
+        stderr=subprocess.STDOUT   # 표준 에러로 에러 확인
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
+    print(f"[Height] 로그 파일: /tmp/height_worker.log")
 
     # 프로세스 종료를 감시해서 플래그를 적절히 되돌리기
     async def _watch():
@@ -160,6 +165,17 @@ async def start_height_worker():
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, height_proc.wait)
         print("[Height] 워커 종료 감지")
+        
+        try:
+            with open("/tmp/height_worker.log", "r") as f:
+                log_content = f.read()
+                if log_content.strip():
+                    print("=== Height Worker 로그 ===")
+                    print(log_content)
+                    print("=== 로그 끝 ===")
+        except Exception as e:
+            print(f"[Height] 로그 읽기 실패: {e}")
+        
         height_set_processing = False
         height_proc = None
     asyncio.create_task(_watch())
