@@ -28,7 +28,7 @@ height_proc = None
 height_set_processing = False  # 처리 중 플래그
 
 # === 내부 통신용 === #
-internal_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
+internal_workers = set()
 frontend_ws = None    # 프론트엔드의 WebSocket 연결
 
 atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어액추에이터 높이 낮추기
@@ -52,11 +52,18 @@ async def broadcast_json(payload: dict):
 
 # === 라즈베리파이 내부 워커에게 메시지 전송 === #
 async def send_to_internal_worker(payload: dict):
-    if internal_worker_ws:
+    if not internal_workers:
+        return
+    raw = json.dumps(payload, ensure_ascii=False)
+    dead = []
+    for ws in list(internal_workers):
         try:
-            await internal_worker_ws.send(json.dumps(payload, ensure_ascii=False))
+            await ws.send(raw)
         except Exception as e:
-            print(f"[Hub→Eye] 전송 실패: {e}")
+            print(f"[Hub→Worker] 전송 실패: {e}")
+            dead.append(ws)
+    for ws in dead:
+        internal_workers.discard(ws)
 
 # === front로 메시지 전송 === #
 async def send_to_front(payload: dict):
@@ -481,8 +488,8 @@ async def handle_frontend(websocket):
 # === 새로 추가: 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_worker_ws, height_proc, height_set_processing
-    internal_worker_ws = websocket
+    global internal_workers, height_proc, height_set_processing
+    internal_workers.add(websocket)
     print("[Internal Worker] 연결됨 (포트 8766)")
     
     try:
@@ -536,7 +543,10 @@ async def handle_internal_worker(websocket):
             await send_to_front({"type": "PIR_END"})
             workers["PIR"] = None
     finally:
-        internal_worker_ws = None
+        try:
+            internal_workers.discard(websocket)
+        except Exception:
+            pass
 
 async def main():
     print("=" * 60)
