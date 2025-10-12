@@ -388,6 +388,7 @@ async def ws_client():
     result_status = None
     
     try:
+        print(f"[Height Worker] Hub 연결 시도 중... ({HUB_WS_URL})")
         async with websockets.connect(HUB_WS_URL) as ws:
             ws_connection = ws
             print("[Height Worker] Hub 연결됨 (포트 8766)")
@@ -396,6 +397,7 @@ async def ws_client():
                 nonlocal result_status
                 try:
                     result_status = track_height()
+                    print(f"[Height Worker] track_height() 완료: {result_status}")
                 except Exception as e:
                     print(f"[Height Worker] track_height() 예외: {e}")
                     import traceback
@@ -404,6 +406,7 @@ async def ws_client():
             
             track_thread = threading.Thread(target=run_track, daemon=True)
             track_thread.start()
+            print("[Height Worker] track_thread 시작됨")
             
             await asyncio.sleep(1.0)
             
@@ -411,6 +414,7 @@ async def ws_client():
                 print("[Height Worker] ⚠️ track_height() 즉시 종료")
                 raise Exception("track_height failed to start")
             
+            print("[Height Worker] 메인 루프 진입")
             try:
                 while True:
                     # 1) 작업 스레드가 끝났는지 먼저 확인
@@ -451,29 +455,43 @@ async def ws_client():
                         continue
 
             finally:
-                track_thread.join(timeout=3)                                
-            
-            track_thread.join(timeout=3)
-            
-            if should_stop:
-                await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
-                print("[Height Worker] CANCELLED 전송")
-            elif result_status == "limit_reached":
-                await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
-                print("[Height Worker] END 전송 (한계 도달)")
-            elif result_status == "timeout":
-                await ws.send(json.dumps({"type": "HEIGHT_SET_TIMEOUT"}))
-                print("[Height Worker] TIMEOUT 전송")
-            else:
-                await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
-                print("[Height Worker] END 전송 (정상 완료)")
+                print("[Height Worker] 스레드 종료 대기 중...")
+                track_thread.join(timeout=3)
+                print("[Height Worker] 스레드 종료 완료")
     
+    except websockets.exceptions.WebSocketException as e:
+        print(f"[Height Worker] ❌ WebSocket 연결 실패: {e}")
+        import traceback
+        traceback.print_exc()
     except Exception as e:
-        print(f"[Height Worker] 오류: {e}")
+        print(f"[Height Worker] ❌ 오류: {e}")
         import traceback
         traceback.print_exc()
     finally:
         ws_connection = None
+        print("[Height Worker] ws_client() 종료")                                
+            
+    #         track_thread.join(timeout=3)
+            
+    #         if should_stop:
+    #             await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
+    #             print("[Height Worker] CANCELLED 전송")
+    #         elif result_status == "limit_reached":
+    #             await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
+    #             print("[Height Worker] END 전송 (한계 도달)")
+    #         elif result_status == "timeout":
+    #             await ws.send(json.dumps({"type": "HEIGHT_SET_TIMEOUT"}))
+    #             print("[Height Worker] TIMEOUT 전송")
+    #         else:
+    #             await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
+    #             print("[Height Worker] END 전송 (정상 완료)")
+    
+    # except Exception as e:
+    #     print(f"[Height Worker] 오류: {e}")
+    #     import traceback
+    #     traceback.print_exc()
+    # finally:
+    #     ws_connection = None
 
 
 if __name__ == "__main__":
