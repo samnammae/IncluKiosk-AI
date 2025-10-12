@@ -73,7 +73,10 @@ def run_pycoral():
             break
 
         h, w = frame.shape[:2]
-        common.set_input(interpreter, frame)
+        # BGR -> RGB, 그리고 모델 입력 크기(in_w, in_h)로 리사이즈
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(rgb, (in_w, in_h))
+        common.set_input(interpreter, resized)
         start = time.perf_counter()
         interpreter.invoke()
         objs = detect.get_objects(interpreter, score_threshold=THRESHOLD, top_k=TOP_K)
