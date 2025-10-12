@@ -440,6 +440,9 @@ async def ws_client():
                         else:
                             await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
                             print("[Height Worker] END 전송 (정상 완료)")
+                            
+                        await asyncio.sleep(0.5)
+                        print("[Height Worker] 메시지 전송 대기 완료")
                         break  # 루프 종료
 
                     # 2) 서버에서 오는 중단 명령 등 수신 (타임아웃으로 빠르게 폴링)
