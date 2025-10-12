@@ -17,6 +17,20 @@ import sys
 from pathlib import Path
 import subprocess
 
+touch_active = False
+last_touch_end = 0.0
+TOUCH_HOLDOFF = 0.5  # 터치가 끝난 뒤 0.5초 동안 주입 보류
+
+sent_ready = False  # 첫 landmarks 확보 시 EYE_READY 1회 전송
+
+async def send_internal(payload: dict):
+    try:
+        async with websockets.connect(WS_URL) as ws:
+            await ws.send(json.dumps(payload, ensure_ascii=False))
+            await asyncio.sleep(0.05)
+            dbg(f"[WS] sent {payload}")
+    except Exception as e:
+        dbg(f"[WS] send_internal failed: {e}")
 
 # --- WebSocket flags ---
 toggle_mouse_requested = False  # F7 대체 (토글)
@@ -88,6 +102,16 @@ async def ws_receiver():
                         force_mouse_on = False
                         dbg("[WS] → STOP_ALL: fist_enabled=False, force_mouse_on=False")
                         print("[WS] STOP_ALL → 모든 기능 비활성화")
+                        
+                    elif msg_type == "TOUCH_ACTIVE":
+                        touch_active = True
+                        dbg("[WS] TOUCH_ACTIVE → touch_active=True")
+
+                    elif msg_type == "TOUCH_IDLE":
+                        touch_active = False
+                        last_touch_end = time.time()
+                        dbg("[WS] TOUCH_IDLE → touch_active=False, last_touch_end updated")
+
                         
         except Exception as e:
             dbg(f"[WS] connect failed/disconnected: {e} (retry in 2s)")
@@ -457,7 +481,15 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
 def mouse_mover():
     dbg("[Mouse] mover thread start")
     last_xy = (0, 0)  # === 수정: 초기화 추가 ===
+    
     while True:
+        if touch_active or (time.time() - last_touch_end < TOUCH_HOLDOFF):
+            time.sleep(0.01)
+            continue
+
+        with mouse_lock:
+            xy = (mouse_target[0], mouse_target[1])
+        
         if mouse_control_enabled:
             with mouse_lock:
                 xy = (mouse_target[0], mouse_target[1])  # === 수정: 튜플로 변경 ===
@@ -591,6 +623,13 @@ while cap.isOpened():
         last_nose_points_3d = nose_points_3d.copy()
         last_iris_3d_left = iris_3d_left.copy()
         last_iris_3d_right = iris_3d_right.copy()
+        
+        if not sent_ready:
+            try:
+                asyncio.run(send_internal({"type": "EYE_READY"}))
+            except Exception as e:
+                dbg(f"[WS] EYE_READY send error: {e}")
+            sent_ready = True
 
     # Eye sphere tracking & gaze
     if last_head_center is not None and last_iris_3d_left is not None:
@@ -624,9 +663,11 @@ while cap.isOpened():
                 dbg("[Mouse] ON via MOUSE_ON")
 
             if mouse_control_enabled:
-                with mouse_lock:
-                    mouse_target[0] = screen_x
-                    mouse_target[1] = screen_y
+                # 터치 중이거나, 터치 종료 후 홀드오프 동안은 주입 금지
+                if (not touch_active) and (time.time() - last_touch_end >= TOUCH_HOLDOFF):
+                    with mouse_lock:
+                        mouse_target[0] = screen_x
+                        mouse_target[1] = screen_y
 
             write_screen_position(screen_x, screen_y)
             cv2.putText(frame, f"Screen: ({screen_x}, {screen_y})", (10, h-20),
@@ -677,7 +718,8 @@ while cap.isOpened():
 
     # 3) 키 입력 먼저 읽고, 그 다음 c_pressed 계산(버그 수정 포인트)
     key = cv2.waitKey(1) & 0xFF
-    c_pressed = (key == ord('c')) or eye_calib_requested
+    # ⚠️ 여기서 'eye_calib_requested'는 메쉬 있을 때만 소비되게 바꿈
+    c_pressed = (key == ord('c')) or (eye_calib_requested and (last_head_center is not None))
 
     if key == ord('q'):
         dbg("[Key] q → quit")
@@ -687,6 +729,7 @@ while cap.isOpened():
         if last_head_center is None:
             dbg("[Calib] ✗ No face mesh data")
             print("[Calib] ✗ No face mesh data - wait for face detection")
+            pass
         else:
             current_nose_scale = compute_scale(last_nose_points_3d)
             # LEFT
@@ -725,9 +768,9 @@ while cap.isOpened():
             dbg("[Calib] ✓ Complete (left/right locked)")
             print("[Calibration] ✓ Complete")
 
-        if eye_calib_requested:
-            dbg("[Calib] consumed eye_calib_requested=True → False")
-            eye_calib_requested = False
+            if eye_calib_requested:
+                dbg("[Calib] consumed eye_calib_requested=True → False")
+                eye_calib_requested = False
 
     elif key == ord('s') and left_sphere_locked and right_sphere_locked:
         if last_head_center is None:

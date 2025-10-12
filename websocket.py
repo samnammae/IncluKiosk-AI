@@ -7,6 +7,7 @@ from pathlib import Path
 import os
 from functools import partial
 import tts_stt
+from asyncio import Event
 
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
@@ -26,6 +27,9 @@ clients = set()  # 프론트엔드 클라이언트들
 eye_proc = None
 height_proc = None
 height_set_processing = False  # 처리 중 플래그
+
+eye_ready_event = Event()   # eye 워커 준비 신호 대기
+touch_active = False        # 터치 중 여부(브로드캐스트용)
 
 # === 내부 통신용 === #
 internal_workers = set()
@@ -123,10 +127,18 @@ def start_eye():
     global eye_proc
     if is_running(eye_proc):
         return
-    # sudo -E 필요
-    eye_proc = subprocess.Popen(["sudo", "-E", "python", EYE_SCRIPT],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
+    # 로그 파일로 출력 (디버깅 편의)
+    log_file = open("/tmp/eye_worker.log", "w")
+    env = os.environ.copy()
+    # X 세션 접근 보장 (pi 사용자 기준)
+    env.setdefault("DISPLAY", ":0")
+    env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
+    eye_proc = subprocess.Popen(
+        [PYTHON, EYE_SCRIPT],
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        env=env
+    )
 
 # === 높이 조절 관련 ===
 async def start_height_worker():
@@ -435,14 +447,16 @@ async def handle_frontend(websocket):
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
                 print("▣ ▣ ▣ EYE_CALIB_ON!!!")
-                # 🆕 1. 모든 워커 안전하게 정지
                 await stop_all_workers_safely()
-                
-                # 2. eye_tracking_worker 시작 (유일하게 시작하는 곳!)
+
+                eye_ready_event.clear()
                 start_eye()
-                await asyncio.sleep(2.0)  # 워커가 WS 연결할 시간 제공
-                
-                # 3. 캘리브레이션 명령 전송
+                try:
+                    await asyncio.wait_for(eye_ready_event.wait(), timeout=5.0)
+                    print("[EYE_CALIB] worker READY 확인")
+                except asyncio.TimeoutError:
+                    print("[EYE_CALIB] ⚠ READY 타임아웃 → 어쨌든 진행")
+
                 await send_to_internal_worker({"type": "EYE_CALIB_ON"})
                 print("[EYE_CALIB] 명령 전송 완료")
 
@@ -456,6 +470,17 @@ async def handle_frontend(websocket):
                     # 마우스 제어만 켜기 (캘리브레이션 유지)
                     await send_to_internal_worker({"type": "MOUSE_ON"})
                     print("[MODE_SELECT] 마우스 제어 ON 명령 전송 완료 (캘리브레이션 유지)")
+                    
+            elif msg_type == "TOUCH_START":
+                print("▣ ▣ ▣ TOUCH_START")
+                # 전역 플래그는 필요하면 쓰고, 워커로 브로드캐스트
+                # touch_active = True
+                await send_to_internal_worker({"type": "TOUCH_ACTIVE"})
+
+            elif msg_type == "TOUCH_END":
+                print("▣ ▣ ▣ TOUCH_END")
+                # touch_active = False
+                await send_to_internal_worker({"type": "TOUCH_IDLE"})
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
@@ -520,7 +545,7 @@ async def handle_frontend(websocket):
 # === 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_workers, height_proc, height_set_processing
+    global internal_workers, height_proc, height_set_processing, eye_ready_event
     internal_workers.add(websocket)
     print("[Internal Worker] 연결됨 (포트 8766)")
     
@@ -530,8 +555,12 @@ async def handle_internal_worker(websocket):
             msg_type = data.get("type")
             print(f"[Worker→Hub] 수신: {msg_type}")
             
+            if msg_type == "EYE_READY":
+                print("[Hub] eye worker READY")
+                eye_ready_event.set()
+                
             # PIR 감지
-            if msg_type == "PIR_DETECTED":
+            elif msg_type == "PIR_DETECTED":
                 print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
                 
