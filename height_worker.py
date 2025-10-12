@@ -68,67 +68,105 @@ def load_labels(path):
 
 
 def detect_person_bbox(interpreter, labels, bgr):
-    # 1) 원본 크기
-    H, W = bgr.shape[:2]
+    """EdgeTPU를 사용하여 사람 감지 (안전성 개선)"""
+    try:
+        # 1) 원본 크기 검증
+        if bgr is None or bgr.size == 0:
+            print("[EdgeTPU] 빈 프레임 수신")
+            return None
+            
+        H, W = bgr.shape[:2]
+        if H <= 0 or W <= 0:
+            print(f"[EdgeTPU] 잘못된 프레임 크기: {W}x{H}")
+            return None
 
-    # 2) RGB 변환
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        # 2) RGB 변환
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-    # 3) 모델 입력 크기 구해서 리사이즈
-    in_w, in_h = common.input_size(interpreter)[:2]  # (width, height[, channels])
-    resized = cv2.resize(rgb, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
+        # 3) 모델 입력 크기 구하기
+        input_details = common.input_size(interpreter)
+        print(f"[EdgeTPU] 모델 입력 크기: {input_details}")  # 디버깅
+        
+        in_w, in_h = input_details[:2]  # (width, height[, channels])
+        
+        # 크기 검증
+        if in_w <= 0 or in_h <= 0 or in_w > 10000 or in_h > 10000:
+            print(f"[EdgeTPU] 비정상적인 모델 입력 크기: {in_w}x{in_h}")
+            return None
+        
+        # 4) 리사이즈
+        resized = cv2.resize(rgb, (in_w, in_h), interpolation=cv2.INTER_LINEAR)
 
-    # 4) 텐서 설정 & 추론
-    common.set_input(interpreter, resized)
-    interpreter.invoke()
+        # 5) 텐서 설정 & 추론
+        common.set_input(interpreter, resized)
+        interpreter.invoke()
 
-    # 5) 감지 결과 받기
-    objs = detect.get_objects(interpreter, score_threshold=PERSON_SCORE_TH)
+        # 6) 감지 결과 받기
+        objs = detect.get_objects(interpreter, score_threshold=PERSON_SCORE_TH)
 
-    # 6) 입력텐서 좌표계 → 원본 프레임 좌표계로 역스케일
-    x_scale = in_w / W
-    y_scale = in_h / H
+        # 7) 입력텐서 좌표계 → 원본 프레임 좌표계로 역스케일
+        x_scale = in_w / W
+        y_scale = in_h / H
 
-    best = None
-    best_area = -1.0
-    for o in objs:
-        name = labels.get(o.id, str(o.id)).lower()
-        if name != "person":
-            continue
+        best = None
+        best_area = -1.0
+        for o in objs:
+            name = labels.get(o.id, str(o.id)).lower()
+            if name != "person":
+                continue
 
-        # pycoral bbox는 입력텐서 기준 절대좌표
-        bb = o.bbox  # has xmin, ymin, width, height
+            bb = o.bbox  # has xmin, ymin, width, height
 
-        x0 = int(bb.xmin / x_scale)
-        y0 = int(bb.ymin / y_scale)
-        x1 = int((bb.xmin + bb.width)  / x_scale)
-        y1 = int((bb.ymin + bb.height) / y_scale)
+            x0 = int(bb.xmin / x_scale)
+            y0 = int(bb.ymin / y_scale)
+            x1 = int((bb.xmin + bb.width)  / x_scale)
+            y1 = int((bb.ymin + bb.height) / y_scale)
 
-        # 정규화 [0,1]
-        x0n = max(0.0, min(1.0, x0 / W))
-        y0n = max(0.0, min(1.0, y0 / H))
-        x1n = max(0.0, min(1.0, x1 / W))
-        y1n = max(0.0, min(1.0, y1 / H))
+            # 정규화 [0,1]
+            x0n = max(0.0, min(1.0, x0 / W))
+            y0n = max(0.0, min(1.0, y0 / H))
+            x1n = max(0.0, min(1.0, x1 / W))
+            y1n = max(0.0, min(1.0, y1 / H))
 
-        area = (x1n - x0n) * (y1n - y0n)
-        if area > best_area:
-            best_area = area
-            best = (x0n, y0n, x1n, y1n)
+            area = (x1n - x0n) * (y1n - y0n)
+            if area > best_area:
+                best_area = area
+                best = (x0n, y0n, x1n, y1n)
 
-    return best  # (x0, y0, x1, y1) in [0,1] or None
+        return best  # (x0, y0, x1, y1) in [0,1] or None
+    
+    except Exception as e:
+        print(f"[EdgeTPU] 예외 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def track_height():
     """높이 추적 메인 로직 (동기 함수)"""
     global should_stop
     
-    init_motor()    # GPIO 세팅 및 리니어 액추에이터 모터 활성화
+    try:
+        init_motor()    # GPIO 세팅 및 리니어 액추에이터 모터 활성화
+    except Exception as e:
+        print(f"[Height] 모터 초기화 실패: {e}")
+        return "error"
 
     # 카메라
     cap = cv2.VideoCapture(CAM_INDEX)
+    if not cap.isOpened():
+        print(f"[Height] 카메라 열기 실패 (인덱스: {CAM_INDEX})")
+        cleanup_motor()
+        return "error"
+    
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
     cap.set(cv2.CAP_PROP_FPS, 30)
+    
+    # 실제 설정된 해상도 확인
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"[Height] 카메라 해상도: {actual_w}x{actual_h}")
 
     # 얼굴 검출 (BlazeFace 기반)
     face_det = mp_face.FaceDetection(
@@ -137,9 +175,17 @@ def track_height():
     )
 
     # EdgeTPU person detector 준비
-    labels = load_labels(EDGETPU_LABELS)
-    interpreter = make_interpreter(EDGETPU_MODEL)
-    interpreter.allocate_tensors()
+    try:
+        labels = load_labels(EDGETPU_LABELS)
+        interpreter = make_interpreter(EDGETPU_MODEL)
+        interpreter.allocate_tensors()
+        print(f"[Height] EdgeTPU 모델 로드 완료")
+    except Exception as e:
+        print(f"[Height] EdgeTPU 모델 로드 실패: {e}")
+        cap.release()
+        face_det.close()
+        cleanup_motor()
+        return "error"
 
     target_y = 0.5
     deadband = DEADBAND_PCT
@@ -154,22 +200,23 @@ def track_height():
     try:
         while not should_stop:
             ok, frame = cap.read()
-            if not ok:
-                print("Camera read failed.")
-                break
+            if not ok or frame is None:
+                print("[Height] 카메라 읽기 실패")
+                time.sleep(0.1)
+                continue
 
             frame_idx += 1
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = face_det.process(frame_rgb)
 
             state = None
-            detection_found = False  # 이번 프레임에 감지 여부
+            detection_found = False
             
             if result and result.detections:
                 detection_found = True
                 det = result.detections[0]
                 box = det.location_data.relative_bounding_box
-                y_center = box.ymin + box.height * 0.5  # 0~1
+                y_center = box.ymin + box.height * 0.5
 
                 ema_y = y_center if ema_y is None else EMA_ALPHA * y_center + (1 - EMA_ALPHA) * ema_y
                 diff = ema_y - target_y
@@ -178,16 +225,16 @@ def track_height():
                     stable_count += 1
                 elif diff < 0:
                     state = "up"
-                    stable_count = 0   # 얼굴이 중앙보다 위 → 카메라 내려야
-                    moveUp(WITH_FACE)    # 액추에이터 위로 이동
+                    stable_count = 0
+                    moveUp(WITH_FACE)
                     
                     if exceed_max_height():
                         print("🚫 최대 높이 도달 → 높이 조절 종료")
                         break
                 else:
                     state = "down"
-                    stable_count = 0   # 얼굴이 중앙보다 아래 → 카메라 올려야
-                    moveDown(WITH_FACE)     # 액추에이터 아래로 이동
+                    stable_count = 0
+                    moveDown(WITH_FACE)
                     
                     if exceed_min_height():
                         print("🚫 최소 높이 도달 → 높이 조절 종료")
@@ -197,54 +244,52 @@ def track_height():
                 person = detect_person_bbox(interpreter, labels, frame)
                 stable_count = 0
                 if person is None:
-                    state = "hint_down"   # 화면에 사람 박스도 없으면 카메라가 너무 위일 확률 → 아래로 스캔
-                    moveDown(WITHOUT_FACE) # 액추에이터 아래로 이동
+                    state = "hint_down"
+                    moveDown(WITHOUT_FACE)
                     
                     if exceed_min_height():
                         print("🚫 최소 높이 도달 → 높이 조절 종료")
                         break
                 else:
-                    detection_found = True  # 사람 박스는 감지됨
+                    detection_found = True
                     x0, y0, x1, y1 = person
                     y_center = (y0 + y1) * 0.5
-                    # 경계 접촉이면 방향 확신 강화
                     if y0 <= 0.05:
-                        state = "hint_up"     # 상단에 걸림 → 키 큼 → 카메라 위로
-                        moveUp(WITHOUT_FACE)    # 액추에이터 위로 이동
+                        state = "hint_up"
+                        moveUp(WITHOUT_FACE)
                         
                         if exceed_max_height():
                             print("🚫 최대 높이 도달 → 높이 조절 종료")
                             break
                     elif y1 >= 0.95:
-                        state = "hint_down"   # 하단에 걸림 → 키 작음 → 카메라 아래로
-                        moveDown(WITHOUT_FACE) # 액추에이터 아래로 이동
+                        state = "hint_down"
+                        moveDown(WITHOUT_FACE)
                         
                         if exceed_min_height():
                             print("🚫 최소 높이 도달 → 높이 조절 종료")
                             break
                     else:
-                        # 중앙 기준으로 간단 판정
                         state = "up" if y_center < target_y - deadband else "down"
 
             # 감지 시간 업데이트
             if detection_found:
                 last_detection_time = time.time()
             
-            # 타임아웃 체크 (15초간 미감지)
+            # 타임아웃 체크
             if time.time() - last_detection_time > NO_DETECTION_TIMEOUT:
                 print(f"⚠️ {NO_DETECTION_TIMEOUT}초간 사용자 미감지 → 높이 조절 타임아웃")
-                break  # 루프 종료 (finally에서 타임아웃 메시지 전송)
+                break
 
-            # 자동 종료 체크 (3초간 안정화)
+            # 자동 종료 체크
             if state == "center" and stable_count >= STABLE_FRAMES:
                 if stable_start_time is None:
                     stable_start_time = time.time()
                     print("✅ 안정화 감지 - 자동 종료 타이머 시작")
                 elif time.time() - stable_start_time >= AUTO_EXIT_STABLE_TIME:
                     print(f"✅ {AUTO_EXIT_STABLE_TIME}초간 안정화 유지 → 높이 조절 완료!")
-                    break  # 정상 완료
+                    break
             else:
-                stable_start_time = None  # 안정화 해제되면 타이머 리셋
+                stable_start_time = None
 
             now = time.time()
             if now - last_print_t >= PRINT_EVERY:
@@ -269,13 +314,17 @@ def track_height():
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt - 높이 조절 중단")
+    except Exception as e:
+        print(f"[Height] track_height 예외: {e}")
+        import traceback
+        traceback.print_exc()
+        return "error"
     finally:
         cap.release()
         face_det.close()
-        # cv2.destroyAllWindows()
-        cleanup_motor()         # GPIO 정리 및 리니어 액추에이터 모터 정리
+        cleanup_motor()
         
-        # 종료 이유 판단: 한계 도달 / 타임아웃 / 정상 완료
+        # 종료 이유 판단
         if exceed_max_height() or exceed_min_height():
             return "limit_reached"
         elif time.time() - last_detection_time > NO_DETECTION_TIMEOUT:

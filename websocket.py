@@ -25,6 +25,7 @@ clients = set()  # 프론트엔드 클라이언트들
 # 런처 핸들
 eye_proc = None
 height_proc = None
+height_set_processing = False  # 처리 중 플래그
 
 # === 내부 통신용 === #
 internal_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
@@ -131,10 +132,19 @@ def start_eye():
 # === 높이 조절 관련 ===
 async def start_height_worker():
     """높이 조절 워커 시작"""
-    global height_proc
+    global height_proc, height_set_processing
+    
+    # 이미 처리 중이면 무시
+    if height_set_processing:
+        print("[Height] 이미 처리 중 (디바운싱)")
+        return
+    
     if is_running(height_proc):
         print("[Height] 이미 실행 중")
         return
+    
+    # 처리 시작 플래그 설정
+    height_set_processing = True
     
     print("[Height] 워커 시작")
     height_proc = subprocess.Popen(
@@ -143,13 +153,15 @@ async def start_height_worker():
         stderr=sys.stderr   # 표준 에러로 에러 확인
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
+    height_set_processing = False
 
-# 🆕 높이 조절 워커 중단
+# 높이 조절 워커 중단
 async def stop_height_worker():
     """높이 조절 중단 (graceful shutdown)"""
-    global height_proc
+    global height_proc, height_set_processing
     if not is_running(height_proc):
         print("[Height] 이미 중단됨")
+        height_set_processing = False  # 플래그 리셋
         return
     
     print("[Height] 중단 명령 전송")
@@ -173,6 +185,7 @@ async def stop_height_worker():
             height_proc.kill()
     finally:
         height_proc = None
+        height_set_processing = False  # 🆕 플래그 리셋
 
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):
@@ -458,7 +471,7 @@ async def handle_frontend(websocket):
 # === 새로 추가: 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_worker_ws, height_proc
+    global internal_worker_ws, height_proc, height_set_processing
     internal_worker_ws = websocket
     print("[Internal Worker] 연결됨 (포트 8766)")
     
@@ -489,18 +502,21 @@ async def handle_internal_worker(websocket):
                 print("[Hub] ✅ 높이 조절 정상 완료")
                 await send_to_front({"type": "HEIGHT_SET_END"})
                 height_proc = None  # 프로세스 핸들 정리
+                height_set_processing = False  # 플래그 리셋
             
             # 높이 조절 타임아웃
             elif msg_type == "HEIGHT_SET_TIMEOUT":
                 print("[Hub] ⚠️ 높이 조절 타임아웃 (30초간 미감지)")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
+                height_set_processing = False  # 플래그 리셋
             
             # 높이 조절 취소됨
             elif msg_type == "HEIGHT_SET_CANCEL":
                 print("[Hub] 🚫 높이 조절 취소됨")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
+                height_set_processing = False  # 플래그 리셋
     
     except websockets.exceptions.ConnectionClosed:
         print("[Internal Worker] 연결 끊김")
