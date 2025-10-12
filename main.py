@@ -48,6 +48,7 @@ def main():
         tensor = detect.input_tensor(interpreter=interpreter)
         tensor.fill(0)  # padding
         tensor[:, :] = image.copy()
+        del tensor  
         
         interpreter.invoke()  # start
         
