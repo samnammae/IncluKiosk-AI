@@ -1,6 +1,7 @@
 import cv2, time, numpy as np, asyncio, websockets, json, threading
 import tflite_runtime.interpreter as tflite
 import detect
+import os
 from linear_actuator.linear_actuator_controller import (
     init_motor,
     cleanup_motor,
@@ -27,8 +28,9 @@ WITHOUT_FACE = 500
 AUTO_EXIT_STABLE_TIME = 3
 NO_DETECTION_TIMEOUT = 15
 
-FACE_MODEL = "models/ssd_mobilenet_v2_face_quant_postprocess_edgetpu.tflite"
-PERSON_MODEL = "models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FACE_MODEL = os.path.join(SCRIPT_DIR, "models", "ssd_mobilenet_v2_face_quant_postprocess_edgetpu.tflite")
+PERSON_MODEL = os.path.join(SCRIPT_DIR, "models", "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")
 
 HUB_WS_URL = "ws://localhost:8766"
 
@@ -149,6 +151,13 @@ def track_height():
     """높이 추적 메인 로직"""
     global should_stop
     
+    # ✅ 작업 디렉토리 확인
+    import os
+    print(f"[DEBUG] 현재 작업 디렉토리: {os.getcwd()}")
+    print(f"[DEBUG] 스크립트 위치: {os.path.abspath(__file__)}")
+    print(f"[DEBUG] FACE_MODEL 경로: {FACE_MODEL}")
+    print(f"[DEBUG] 파일 존재 여부: {os.path.exists(FACE_MODEL)}")
+    
     try:
         print("[Height] 모터 초기화 중...")
         init_motor()
@@ -222,7 +231,7 @@ def track_height():
     frame_idx = 0
     
     # ✅ 화면 표시 옵션
-    SHOW_DISPLAY = True  # False로 하면 화면 안 띄움
+    SHOW_DISPLAY = False  # False로 하면 화면 안 띄움
 
     try:
         while not should_stop:
