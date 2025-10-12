@@ -45,12 +45,20 @@ WS_URL = "ws://localhost:8766"  # websocket.py의 내부 서버로 연결
 import logging, sys, os, datetime
 BASE_DIR = Path(__file__).resolve().parent
 
-LOG_FILE = str(BASE_DIR / "optimized_code.log")  # 파일로도 남기기
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+LOG_FILE = "/tmp/eye_tracking_optimized.log"  # /tmp는 항상 쓰기 가능
+try:
+    logging.basicConfig(
+        filename=LOG_FILE,
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+except PermissionError:
+    # 권한 문제 시 콘솔에만 출력
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+    print(f"⚠ 로그 파일 생성 실패, 콘솔 출력만 사용: {LOG_FILE}")
 
 def dbg(msg):
     # 콘솔 + 파일 모두 찍고 즉시 flush
