@@ -31,7 +31,6 @@ height_set_processing = False  # 처리 중 플래그
 internal_worker_ws = None  # eye_tracking_worker의 WebSocket 연결
 frontend_ws = None    # 프론트엔드의 WebSocket 연결
 
-USE_ACK = False  # 필요 없으면 False
 atexit.register(on_shutdown)    # 최종 프로그램 종료시에 리니어액추에이터 높이 낮추기
 
 async def send_json(ws, payload: dict):
@@ -70,20 +69,14 @@ async def send_to_front(payload: dict):
 # === pir 센서 관련 ===
 async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
-        if USE_ACK and websocket:
-            await send_json(websocket, {"type": "PIR_ON_ACK", "status": "already_running"})
         return
     proc = subprocess.Popen([PYTHON, PIR_WORKER])
     workers["PIR"] = proc
-    if USE_ACK and websocket:
-        await send_json(websocket, {"type": "PIR_ON_ACK", "status": "started"})
 
 async def stop_pir(websocket=None):
     proc = workers.get("PIR")
     if not proc or (proc.poll() is not None):
         workers["PIR"] = None
-        if USE_ACK and websocket:
-            await send_json(websocket, {"type": "PIR_OFF_ACK", "status": "already_stopped"})
         return
     proc.terminate()
     try:
@@ -96,8 +89,6 @@ async def stop_pir(websocket=None):
             pass
     finally:
         workers["PIR"] = None
-        if USE_ACK and websocket:
-            await send_json(websocket, {"type": "PIR_OFF_ACK", "status": "stopped"})
 
 async def clear_pir_state_and_notify_frontend():
     workers["PIR"] = None
@@ -427,8 +418,6 @@ async def handle_frontend(websocket):
                 await broadcast_json({"type": "EYE_CALIB_ON"})
                 # === 새로 추가: eye_tracking_worker로 캘리브레이션 명령 전송 ===
                 await send_to_internal_worker({"type": "EYE_CALIB_ON"})
-                if USE_ACK:
-                    await send_json(websocket, {"type": "EYE_CALIB_ON_ACK"})
 
             elif msg_type == "MODE_SELECT_ON":
                 print("▣ ▣ ▣ MODE_SELECT_ON!!!")
@@ -436,8 +425,6 @@ async def handle_frontend(websocket):
                 await broadcast_json({"type": "MOUSE_ON"})
                 # === 새로 추가: eye_tracking_worker로 마우스 ON 명령 전송 ===
                 await send_to_internal_worker({"type": "MOUSE_ON"})
-                if USE_ACK:
-                    await send_json(websocket, {"type": "MODE_SELECT_ON_ACK"})
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
@@ -450,8 +437,6 @@ async def handle_frontend(websocket):
                 eye_proc = stop_proc(eye_proc)
                 # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
                 await send_to_internal_worker({"type": "STOP_ALL"})
-                if USE_ACK:
-                    await send_json(websocket, {"type": "NORMAL_ORDER_ON_ACK"})
 
             elif msg_type == "EYE_ORDER_ON":
                 print("▣ ▣ ▣ EYE_ORDER_ON!!!")
@@ -461,8 +446,6 @@ async def handle_frontend(websocket):
                 # === 새로 추가: eye_tracking_worker로 명령 전송 ===
                 await send_to_internal_worker({"type": "EYE_ORDER_ON"})
                 await send_to_internal_worker({"type": "MOUSE_ON"})
-                if USE_ACK:
-                    await send_json(websocket, {"type": "EYE_ORDER_ON_ACK"})
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
@@ -484,10 +467,6 @@ async def handle_frontend(websocket):
                 await send_to_internal_worker({"type": "STOP_ALL"})
                 # PIR 시작
                 await start_pir()
-                if USE_ACK:
-                    await send_json(websocket, {"type": "ALL_RESET_ACK"})
-                else:
-                    await send_json(websocket, {"type": "ALL_RESET"})
 
             else:
                 await send_json(websocket, {"type": "ERROR", "message": f"Unknown type: {msg_type}"})
