@@ -14,8 +14,8 @@ from linear_actuator.linear_actuator_controller import (
 # ====== 설정 ======
 CAM_INDEX = 0
 FRAME_W, FRAME_H = 640, 480
-MIN_DET_CONF = 0.4  # 임계값 낮춤 (원래 0.5)
-PERSON_SCORE_TH = 0.3  # 임계값 낮춤 (원래 0.4)
+MIN_DET_CONF = 0.4
+PERSON_SCORE_TH = 0.3
 
 DEADBAND_PCT = 0.06
 EMA_ALPHA = 0.3
@@ -151,13 +151,6 @@ def track_height():
     """높이 추적 메인 로직"""
     global should_stop
     
-    # ✅ 작업 디렉토리 확인
-    import os
-    print(f"[DEBUG] 현재 작업 디렉토리: {os.getcwd()}")
-    print(f"[DEBUG] 스크립트 위치: {os.path.abspath(__file__)}")
-    print(f"[DEBUG] FACE_MODEL 경로: {FACE_MODEL}")
-    print(f"[DEBUG] 파일 존재 여부: {os.path.exists(FACE_MODEL)}")
-    
     try:
         print("[Height] 모터 초기화 중...")
         init_motor()
@@ -182,14 +175,14 @@ def track_height():
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"[Height] 카메라 해상도: {actual_w}x{actual_h}")
 
-    # ✅ 카메라 워밍업
+    # 카메라 워밍업
     print("[Height] 카메라 워밍업 중 (30 프레임)...")
     warmup_success = 0
     for i in range(30):
         ret, frame = cap.read()
         if ret and frame is not None:
             warmup_success += 1
-        time.sleep(0.033)  # ~30fps
+        time.sleep(0.033)
     print(f"[Height] 워밍업 완료: {warmup_success}/30 프레임 성공")
     
     if warmup_success < 20:
@@ -229,9 +222,6 @@ def track_height():
     last_print_t = 0
     last_state = None
     frame_idx = 0
-    
-    # ✅ 화면 표시 옵션
-    SHOW_DISPLAY = False  # False로 하면 화면 안 띄움
 
     try:
         while not should_stop:
@@ -243,11 +233,8 @@ def track_height():
 
             frame_idx += 1
             
-            # 원본 프레임 복사 (화면 표시용)
-            display_frame = frame.copy() if SHOW_DISPLAY else None
-            
             # 디버그: 프레임 정보
-            if frame_idx % 60 == 0:  # 2초마다
+            if frame_idx % 60 == 0:
                 debug_log(f"Frame {frame_idx}: shape={frame.shape}, dtype={frame.dtype}")
             
             # 얼굴 검출
@@ -255,25 +242,11 @@ def track_height():
 
             state = None
             detection_found = False
-            person = None
             
             if faces:
                 detection_found = True
                 face = max(faces, key=lambda f: (f[2]-f[0])*(f[3]-f[1]))
                 xmin, ymin, xmax, ymax, score = face
-                
-                # ✅ 화면에 얼굴 박스 그리기
-                if SHOW_DISPLAY:
-                    H, W = frame.shape[:2]
-                    x1, y1 = int(xmin * W), int(ymin * H)
-                    x2, y2 = int(xmax * W), int(ymax * H)
-                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(display_frame, f'Face {score*100:.0f}%', (x1, y1-5),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    # 중심점
-                    cx = int((xmin + xmax) * 0.5 * W)
-                    cy = int((ymin + ymax) * 0.5 * H)
-                    cv2.circle(display_frame, (cx, cy), 5, (0, 0, 255), -1)
                 
                 y_center = (ymin + ymax) * 0.5
                 ema_y = y_center if ema_y is None else EMA_ALPHA * y_center + (1 - EMA_ALPHA) * ema_y
@@ -302,16 +275,6 @@ def track_height():
                 # 사람 검출
                 person = detect_person_ssd(person_interpreter, frame, PERSON_SCORE_TH)
                 stable_count = 0
-                
-                # ✅ 화면에 사람 박스 그리기
-                if SHOW_DISPLAY and person:
-                    H, W = frame.shape[:2]
-                    x0, y0, x1, y1 = person
-                    px1, py1 = int(x0 * W), int(y0 * H)
-                    px2, py2 = int(x1 * W), int(y1 * H)
-                    cv2.rectangle(display_frame, (px1, py1), (px2, py2), (255, 0, 255), 2)
-                    cv2.putText(display_frame, 'Person', (px1, py1-5),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 2)
                 
                 if person is None:
                     state = "hint_down"
@@ -342,42 +305,6 @@ def track_height():
                         y_center = (y0 + y1) * 0.5
                         state = "up" if y_center < target_y - deadband else "down"
 
-            # ✅ 화면에 상태 정보 표시
-            if SHOW_DISPLAY:
-                H, W = display_frame.shape[:2]
-                
-                # 타겟 라인 (중앙)
-                target_line_y = int(target_y * H)
-                cv2.line(display_frame, (0, target_line_y), (W, target_line_y), (255, 255, 0), 2)
-                
-                # 데드밴드 영역
-                deadband_top = int((target_y - deadband) * H)
-                deadband_bottom = int((target_y + deadband) * H)
-                cv2.rectangle(display_frame, (0, deadband_top), (W, deadband_bottom), 
-                             (0, 255, 255), 1)
-                
-                # EMA 라인
-                if ema_y is not None:
-                    ema_line_y = int(ema_y * H)
-                    cv2.line(display_frame, (0, ema_line_y), (W, ema_line_y), (0, 255, 0), 1)
-                
-                # 상태 텍스트
-                status_color = (0, 255, 0) if state == "center" else (0, 165, 255)
-                status_text = f"State: {state}"
-                if state == "center":
-                    status_text += f" ({stable_count}/{STABLE_FRAMES})"
-                
-                cv2.putText(display_frame, status_text, (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-                
-                # 프레임 번호
-                cv2.putText(display_frame, f'Frame: {frame_idx}', (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                
-                # 화면 표시
-                cv2.imshow('Height Worker', display_frame)
-                cv2.waitKey(1)  # 1ms 대기 (화면 갱신용)
-                
             # 감지 시간 업데이트
             if detection_found:
                 last_detection_time = time.time()
@@ -429,8 +356,6 @@ def track_height():
         return "error"
     finally:
         cap.release()
-        if SHOW_DISPLAY:
-            cv2.destroyAllWindows() 
         cleanup_motor()
         
         if exceed_max_height() or exceed_min_height():
@@ -465,7 +390,7 @@ async def ws_client():
             track_thread = threading.Thread(target=run_track, daemon=True)
             track_thread.start()
             
-            await asyncio.sleep(1.0)  # 1초로 증가
+            await asyncio.sleep(1.0)
             
             if not track_thread.is_alive():
                 print("[Height Worker] ⚠️ track_height() 즉시 종료")
