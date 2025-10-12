@@ -220,7 +220,8 @@ def track_height():
 
     print("[Height] 🚀 높이 조절 시작!")
     
-    target_y = 0.5
+    TARGET_OFFSET_PCT = 0.08  # 8% 위로 목표 이동 (원하는 만큼 조절)
+    target_y = min(0.9, max(0.1, 0.5 - TARGET_OFFSET_PCT))
     deadband = DEADBAND_PCT
     ema_y = None
     stable_count = 0
