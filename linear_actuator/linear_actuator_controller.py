@@ -61,9 +61,17 @@ def init_motor():
 # === 모터 정리 ===
 def cleanup_motor():
     """GPIO 및 모터 비활성화 (높이조절 프로세스 종료 시)"""
-    GPIO.output(ENA, GPIO.LOW)
-    GPIO.cleanup()
-    print("[ACTUATOR] 🧹 GPIO cleaned up and motor disabled")
+    try:
+        print("[ACTUATOR] 🔧 모터 비활성화 시작...")
+        GPIO.output(ENA, GPIO.LOW)
+        print("[ACTUATOR] 🔧 GPIO cleanup 시작...")
+        GPIO.cleanup()
+        print("[ACTUATOR] ✅ GPIO cleaned up and motor disabled")
+    except Exception as e:
+        print(f"[ACTUATOR] ⚠️ cleanup 중 예외 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        # 예외가 발생해도 함수는 정상 종료되도록 함
 
 # === 한계 확인 ===
 def exceed_max_height() -> bool:

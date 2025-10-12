@@ -357,10 +357,25 @@ def track_height():
         traceback.print_exc()
         return "error"
     finally:
-        cap.release()
-        cleanup_motor()
+        print("=== FINALLY 블록 시작 ===")
         
-        print("finish cleanup_motor")
+        try:
+            print("카메라 릴리즈 시작...")
+            cap.release()
+            print("카메라 릴리즈 완료!")
+        except Exception as e:
+            print(f"⚠️ 카메라 릴리즈 실패: {e}")
+        
+        try:
+            print("모터 정리 시작...")
+            cleanup_motor()
+            print("✅ finish cleanup_motor")
+        except Exception as e:
+            print(f"⚠️ cleanup_motor 실패: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        print("=== 반환 값 결정 시작 ===")
         
         if exceed_max_height() or exceed_min_height():
             print("if exceed_max_height() or exceed_min_height()")
@@ -369,7 +384,7 @@ def track_height():
             print("elif time.time() - last_detection_time > NO_DETECTION_TIMEOUT")
             return "timeout"
         else:
-            print("else")
+            print("else - returning complete")
             return "complete"
 
 
