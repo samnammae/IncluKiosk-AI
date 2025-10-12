@@ -2,6 +2,7 @@ import cv2, time, numpy as np, asyncio, websockets, json, threading
 import tflite_runtime.interpreter as tflite
 import detect
 import os
+import asyncio
 from linear_actuator.linear_actuator_controller import (
     init_motor,
     cleanup_motor,
@@ -411,16 +412,46 @@ async def ws_client():
                 raise Exception("track_height failed to start")
             
             try:
-                async for raw in ws:
+                while True:
+                    # 1) 작업 스레드가 끝났는지 먼저 확인
+                    if not track_thread.is_alive():
+                        print("[Height Worker] 작업 완료 감지 → 결과 전송")
+                        # 결과에 따라 서버로 통지
+                        if should_stop:
+                            await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
+                            print("[Height Worker] CANCELLED 전송")
+                        elif result_status == "limit_reached":
+                            await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
+                            print("[Height Worker] END 전송 (한계 도달)")
+                        elif result_status == "timeout":
+                            await ws.send(json.dumps({"type": "HEIGHT_SET_TIMEOUT"}))
+                            print("[Height Worker] TIMEOUT 전송")
+                        else:
+                            await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
+                            print("[Height Worker] END 전송 (정상 완료)")
+                        break  # 루프 종료
+
+                    # 2) 서버에서 오는 중단 명령 등 수신 (타임아웃으로 빠르게 폴링)
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=0.2)
+                    except asyncio.TimeoutError:
+                        continue  # 주기적으로 스레드 상태 재확인
+                    except websockets.exceptions.ConnectionClosed:
+                        print("[Height Worker] Hub 연결 끊김")
+                        break
+
                     data = json.loads(raw)
                     msg_type = data.get("type")
-                    
+
                     if msg_type == "HEIGHT_SET_OFF":
                         print("[Height Worker] 중단 명령 수신")
                         should_stop = True
-                        break
-            except websockets.exceptions.ConnectionClosed:
-                print("[Height Worker] Hub 연결 끊김")
+                        # track_thread는 내부에서 should_stop 보고 빠져나옴
+                        # 여기서 바로 통지하지 말고 위의 완료 분기에서 일괄 전송
+                        continue
+
+            finally:
+                track_thread.join(timeout=3)                                
             
             track_thread.join(timeout=3)
             
