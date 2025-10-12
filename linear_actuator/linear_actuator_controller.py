@@ -24,7 +24,7 @@ GPIO.setup(DIR, GPIO.OUT)
 GPIO.setup(ENA, GPIO.OUT)
 
 # === 기본 설정 ===
-STEP_DELAY = 0.0005     # 한 스텝당 지연 (속도 제어)
+STEP_DELAY = 0.0004     # 한 스텝당 지연 (속도 제어)
 DEFAULT_STEP = 10       # 기본 이동 스텝 수 (미세 조정용)
 # MAX_HEIGHT_STEP = 5000  # 액추에이터 최고 높이 (임시, 실제 측정 필요)
 CUR_HEIGHT_STEP = 0     # 액추에이터 현재 높이 (전역 상태)
