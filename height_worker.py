@@ -233,6 +233,12 @@ def track_height():
 
             frame_idx += 1
             
+            # 🔍 처음 몇 프레임을 저장해서 확인
+            if frame_idx <= 5:
+                filename = f"/tmp/frame_{frame_idx}.jpg"
+                cv2.imwrite(filename, frame)
+                print(f"[DEBUG] 프레임 저장: {filename}")
+                
             # 디버그: 프레임 정보
             if frame_idx % 60 == 0:
                 debug_log(f"Frame {frame_idx}: shape={frame.shape}, dtype={frame.dtype}")
