@@ -73,6 +73,7 @@ async def send_to_front(payload: dict):
         except Exception as e:
             print(f"[Hub→Front] 전송 실패: {e}")
             clients.discard(frontend_ws)
+
 # === pir 센서 관련 ===
 async def start_pir(websocket=None):
     if workers["PIR"] and (workers["PIR"].poll() is None):
@@ -151,8 +152,8 @@ async def start_height_worker():
     
     height_proc = subprocess.Popen(
         ["sudo", "-E", PYTHON, HEIGHT_WORKER],
-        stdout=log_file,  # 표준 출력으로 에러 확인
-        stderr=subprocess.STDOUT   # 표준 에러로 에러 확인
+        stdout=log_file,
+        stderr=subprocess.STDOUT
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
     print(f"[Height] 로그 파일: /tmp/height_worker.log")
@@ -208,16 +209,33 @@ async def stop_height_worker():
             height_proc.kill()
     finally:
         height_proc = None
-        height_set_processing = False  # 🆕 플래그 리셋
+        height_set_processing = False
+
+# === 🆕 모든 워커 안전하게 정지 (eye_tracking_worker 시작 전 필수) ===
+async def stop_all_workers_safely():
+    """카메라/TPU를 사용하는 모든 워커를 안전하게 정지"""
+    print("[Safety] 모든 워커 정지 시작...")
+    
+    # 1. 내부 워커들에게 정지 신호 전송
+    await send_to_internal_worker({"type": "STOP_ALL"})
+    await asyncio.sleep(0.3)
+    
+    # 2. 프로세스 종료
+    global eye_proc
+    eye_proc = stop_proc(eye_proc)
+    await stop_height_worker()
+    await stop_pir()
+    
+    # 3. 장치 해제 대기
+    await asyncio.sleep(0.8)
+    print("[Safety] 모든 워커 정지 완료")
 
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):
     print("▣ ▣ ▣ CHAT_ORDER_ON 처리 로직 시작")
     
-    # 1. 아이트래킹 정지
-    global eye_proc
-    eye_proc = stop_proc(eye_proc)
-    await send_to_internal_worker({"type": "STOP_ALL"})
+    # 1. 모든 워커 정지
+    await stop_all_workers_safely()
     
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
@@ -386,27 +404,27 @@ async def handle_frontend(websocket):
 
             elif msg_type == "PIR_OFF":
                 print("▣ ▣ ▣ PIR_OFF!!!")
+                # 잠금화면 복귀: 모든 워커 종료
                 # 1. 내부 워커에게 종료 신호 전송
                 await send_to_internal_worker({"type": "PIR_OFF"})
+                await send_to_internal_worker({"type": "STOP_ALL"})
                 
-                # 2. 프로세스 종료 대기
-                await asyncio.sleep(1.0)  # 워커가 정리할 시간 제공
+                # 2. eye_tracking_worker도 종료 (잠금화면으로 복귀)
+                eye_proc = stop_proc(eye_proc)
                 
-                # 3. 프로세스 강제 종료 (필요시)
+                # 3. PIR 워커 종료 대기
+                await asyncio.sleep(1.0)
                 await stop_pir(websocket)
                 
                 # 4. 프론트에게 완료 알림
                 await send_to_front({"type": "PIR_END"})
+                print("[PIR_OFF] 모든 워커 종료 완료")
 
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
                 print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
-
-                # 카메라/TPU 점유할 수 있는 것들 먼저 정지
-                eye_proc = stop_proc(eye_proc)                  # 아이트래킹 프로세스 종료
-                await send_to_internal_worker({"type": "STOP_ALL"})  # 내부 워커(eye)에 브로드캐스트
-                await asyncio.sleep(0.8)  # 장치 해제 시간 약간 제공
-                
+                # 🆕 모든 워커 안전하게 정지
+                await stop_all_workers_safely()
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
@@ -417,42 +435,49 @@ async def handle_frontend(websocket):
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
                 print("▣ ▣ ▣ EYE_CALIB_ON!!!")
-                # 1) 아이트래킹 프로세스 실행(필요 시만)
+                # 🆕 1. 모든 워커 안전하게 정지
+                await stop_all_workers_safely()
+                
+                # 2. eye_tracking_worker 시작 (유일하게 시작하는 곳!)
                 start_eye()
-                # 2) 프로세스가 WS 붙을 시간을 주기 위해 2초 대기
-                await asyncio.sleep(2.0)
-                # 3) 이제 보정 트리거 브로드캐스트
-                await broadcast_json({"type": "EYE_CALIB_ON"})
-                # === 새로 추가: eye_tracking_worker로 캘리브레이션 명령 전송 ===
+                await asyncio.sleep(2.0)  # 워커가 WS 연결할 시간 제공
+                
+                # 3. 캘리브레이션 명령 전송
                 await send_to_internal_worker({"type": "EYE_CALIB_ON"})
+                print("[EYE_CALIB] 명령 전송 완료")
 
             elif msg_type == "MODE_SELECT_ON":
                 print("▣ ▣ ▣ MODE_SELECT_ON!!!")
-                # 마우스 제어 '강제 ON'
-                await broadcast_json({"type": "MOUSE_ON"})
-                # === 새로 추가: eye_tracking_worker로 마우스 ON 명령 전송 ===
-                await send_to_internal_worker({"type": "MOUSE_ON"})
+                # eye_tracking_worker가 이미 실행중이면 그대로 두고 명령만 전송
+                if not is_running(eye_proc):
+                    print("[MODE_SELECT] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
+                    await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
+                else:
+                    # 마우스 제어만 켜기 (캘리브레이션 유지)
+                    await send_to_internal_worker({"type": "MOUSE_ON"})
+                    print("[MODE_SELECT] 마우스 제어 ON 명령 전송 완료 (캘리브레이션 유지)")
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
                 print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
+                # 대화 모드: eye_tracking_worker 종료
                 await handle_chat_order_on(websocket)
 
             elif msg_type == "NORMAL_ORDER_ON":
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
-                # 아이트래킹 종료
-                eye_proc = stop_proc(eye_proc)
-                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
-                await send_to_internal_worker({"type": "STOP_ALL"})
+                # 일반 모드: eye_tracking_worker 종료
+                await stop_all_workers_safely()
 
             elif msg_type == "EYE_ORDER_ON":
                 print("▣ ▣ ▣ EYE_ORDER_ON!!!")
-                # 주먹 인식 OFF + 마우스 제어 ON
-                await broadcast_json({"type": "EYE_ORDER_ON"})
-                await broadcast_json({"type": "MOUSE_ON"})
-                # === 새로 추가: eye_tracking_worker로 명령 전송 ===
-                await send_to_internal_worker({"type": "EYE_ORDER_ON"})
-                await send_to_internal_worker({"type": "MOUSE_ON"})
+                # eye_tracking_worker가 이미 실행중이면 그대로 유지 (캘리브레이션 보존!)
+                if not is_running(eye_proc):
+                    print("[EYE_ORDER] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
+                    await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
+                else:
+                    # 주먹 인식 OFF + 마우스 제어 ON (캘리브레이션 계속 유지)
+                    await send_to_internal_worker({"type": "EYE_ORDER_ON"})
+                    print("[EYE_ORDER] 명령 전송 완료 (캘리브레이션 유지)")
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
@@ -464,16 +489,23 @@ async def handle_frontend(websocket):
                 loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
+            # === 🆕 ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
-                print("▣ ▣ ▣ ALL_RESET!!!")
-                # 모든 종료
-                eye_proc = stop_proc(eye_proc)
-                await stop_pir()
-                await stop_height_worker()
-                # === 새로 추가: eye_tracking_worker로 정지 명령 전송 ===
+                print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
+                
+                # 1. 내부 워커들에게 정지 신호 먼저 전송
                 await send_to_internal_worker({"type": "STOP_ALL"})
-                # PIR 시작
-                await start_pir()
+                await asyncio.sleep(0.5)
+                
+                # 2. 모든 프로세스 종료
+                eye_proc = stop_proc(eye_proc)
+                await stop_height_worker()
+                await stop_pir()
+                await asyncio.sleep(0.5)
+                
+                # 4. 프론트에 완료 알림
+                await send_to_front({"type": "ALL_RESET_COMPLETE"})
+                print("[ALL_RESET] 완료")
 
             else:
                 await send_json(websocket, {"type": "ERROR", "message": f"Unknown type: {msg_type}"})
@@ -485,7 +517,7 @@ async def handle_frontend(websocket):
         stt_fail_count = 0
         frontend_ws = None
 
-# === 새로 추가: 라즈베리파이 내부 통신 핸들러 ===
+# === 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
     global internal_workers, height_proc, height_set_processing
@@ -518,22 +550,22 @@ async def handle_internal_worker(websocket):
             elif msg_type == "HEIGHT_SET_END":
                 print("[Hub] ✅ 높이 조절 정상 완료")
                 await send_to_front({"type": "HEIGHT_SET_END"})
-                height_proc = None  # 프로세스 핸들 정리
-                height_set_processing = False  # 플래그 리셋
+                height_proc = None
+                height_set_processing = False
             
             # 높이 조절 타임아웃
             elif msg_type == "HEIGHT_SET_TIMEOUT":
                 print("[Hub] ⚠️ 높이 조절 타임아웃 (30초간 미감지)")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
-                height_set_processing = False  # 플래그 리셋
+                height_set_processing = False
             
             # 높이 조절 취소됨
             elif msg_type == "HEIGHT_SET_CANCEL":
                 print("[Hub] 🚫 높이 조절 취소됨")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
-                height_set_processing = False  # 플래그 리셋
+                height_set_processing = False
     
     except websockets.exceptions.ConnectionClosed:
         print("[Internal Worker] 연결 끊김")
