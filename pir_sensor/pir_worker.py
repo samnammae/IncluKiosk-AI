@@ -40,6 +40,7 @@ async def main():
         flush=True
     )
 
+    ws = None  # WebSocket 참조 저장
     try:
         # ===== GPIO 초기화 =====
         GPIO.setmode(GPIO.BCM)
@@ -68,7 +69,7 @@ async def main():
                     except Exception:
                         pass
 
-            asyncio.create_task(recv_cmd())  # ← 함수 바깥에서 태스크 생성
+            asyncio.create_task(recv_cmd())
 
             last = None
             confirm = 0
@@ -91,16 +92,26 @@ async def main():
                 else:
                     confirm = 0
 
-                # ===== 확정 감지 시 서버로 통지 (종료 금지) =====
+                # ===== 확정 감지 시 서버로 통지 =====
                 if confirm >= max(1, CONFIRM_COUNT):
                     await ws.send(json.dumps({
                         "type": "PIR_DETECTED",
                         "source": "worker"
                     }))
                     print("[PIR] Motion confirmed → sent PIR_DETECTED", flush=True)
-                    confirm = 0  # 계속 대기 (break/exit 금지)
+                    confirm = 0
 
                 await asyncio.sleep(SLEEP_SEC)
+            
+            # 정상 종료 시 서버에 알림
+            try:
+                await ws.send(json.dumps({
+                    "type": "PIR_WORKER_EXIT",
+                    "source": "worker"
+                }))
+                print("[PIR] Sent exit notification to server", flush=True)
+            except Exception as e:
+                print(f"[PIR] Failed to send exit notification: {e}", flush=True)
 
     except Exception as e:
         print("[PIR] Worker exception:", e, flush=True)

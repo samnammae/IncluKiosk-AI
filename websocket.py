@@ -349,9 +349,17 @@ async def handle_frontend(websocket):
 
             elif msg_type == "PIR_OFF":
                 print("▣ ▣ ▣ PIR_OFF!!!")
+                # 1. 내부 워커에게 종료 신호 전송
                 await send_to_internal_worker({"type": "PIR_OFF"})
-                # await asyncio.sleep(1.0)
-                # await stop_pir(websocket)
+                
+                # 2. 프로세스 종료 대기
+                await asyncio.sleep(1.0)  # 워커가 정리할 시간 제공
+                
+                # 3. 프로세스 강제 종료 (필요시)
+                await stop_pir(websocket)
+                
+                # 4. 프론트에게 완료 알림
+                await send_to_front({"type": "PIR_END"})
 
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
@@ -463,6 +471,12 @@ async def handle_internal_worker(websocket):
             if msg_type == "PIR_DETECTED":
                 print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
+                
+            # PIR 워커 정상 종료 (WebSocket 연결 끊김 감지)
+            elif msg_type == "PIR_WORKER_EXIT":
+                print("[Hub] PIR 워커 정상 종료")
+                await send_to_front({"type": "PIR_END"})
+                workers["PIR"] = None
             
             # 주먹 감지
             elif msg_type == "FIST_DETECTED":
@@ -489,6 +503,11 @@ async def handle_internal_worker(websocket):
     
     except websockets.exceptions.ConnectionClosed:
         print("[Internal Worker] 연결 끊김")
+        # PIR 워커가 비정상 종료된 경우도 처리
+        if workers.get("PIR") and workers["PIR"].poll() is None:
+            print("[Hub] PIR 워커 비정상 종료 감지")
+            await send_to_front({"type": "PIR_END"})
+            workers["PIR"] = None
     finally:
         internal_worker_ws = None
 
