@@ -28,7 +28,7 @@ eye_proc = None
 height_proc = None
 height_set_processing = False  # 처리 중 플래그
 
-eye_ready_event = Event()   # eye 워커 준비 신호 대기
+eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
 
 # === 내부 통신용 === #
@@ -449,7 +449,8 @@ async def handle_frontend(websocket):
                 print("▣ ▣ ▣ EYE_CALIB_ON!!!")
                 await stop_all_workers_safely()
 
-                eye_ready_event.clear()
+                global eye_ready_event
+                eye_ready_event = asyncio.Event()  # 현재 이벤트 루프에서 새로 생성
                 start_eye()
                 try:
                     await asyncio.wait_for(eye_ready_event.wait(), timeout=5.0)
@@ -557,7 +558,8 @@ async def handle_internal_worker(websocket):
             
             if msg_type == "EYE_READY":
                 print("[Hub] eye worker READY")
-                eye_ready_event.set()
+                if eye_ready_event is not None:  # None 체크 추가
+                    eye_ready_event.set()
                 
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
