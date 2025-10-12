@@ -32,7 +32,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FACE_MODEL = os.path.join(SCRIPT_DIR, "models", "ssd_mobilenet_v2_face_quant_postprocess_edgetpu.tflite")
 PERSON_MODEL = os.path.join(SCRIPT_DIR, "models", "ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")
 
-HUB_WS_URL = "ws://localhost:8766"
+# HUB_WS_URL = "ws://localhost:8766"
+HUB_WS_URL = "ws://127.0.0.1:8766"
 
 # 디버그 모드
 DEBUG = True
@@ -161,9 +162,15 @@ def track_height():
 
     # 카메라
     print("[Height] 카메라 초기화 중...")
-    cap = cv2.VideoCapture(CAM_INDEX)
+    cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_V4L2)
     if not cap.isOpened():
         print(f"[Height] ❌ 카메라 열기 실패 (인덱스: {CAM_INDEX})")
+        # 디버그용: 현재 비디오 디바이스 나열
+        try:
+            import glob
+            print("[Height] /dev/video* =", glob.glob("/dev/video*"))
+        except:
+            pass
         cleanup_motor()
         return "error"
     

@@ -148,12 +148,21 @@ async def start_height_worker():
     
     print("[Height] 워커 시작")
     height_proc = subprocess.Popen(
-        ["sudo", "-E", "python", HEIGHT_WORKER],
+        ["sudo", "-E", PYTHON, HEIGHT_WORKER],
         stdout=sys.stdout,  # 표준 출력으로 에러 확인
         stderr=sys.stderr   # 표준 에러로 에러 확인
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
-    height_set_processing = False
+
+    # 프로세스 종료를 감시해서 플래그를 적절히 되돌리기
+    async def _watch():
+        global height_set_processing, height_proc
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, height_proc.wait)
+        print("[Height] 워커 종료 감지")
+        height_set_processing = False
+        height_proc = None
+    asyncio.create_task(_watch())
 
 # 높이 조절 워커 중단
 async def stop_height_worker():
@@ -378,6 +387,12 @@ async def handle_frontend(websocket):
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
                 print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
+
+                # 카메라/TPU 점유할 수 있는 것들 먼저 정지
+                eye_proc = stop_proc(eye_proc)                  # 아이트래킹 프로세스 종료
+                await send_to_internal_worker({"type": "STOP_ALL"})  # 내부 워커(eye)에 브로드캐스트
+                await asyncio.sleep(0.8)  # 장치 해제 시간 약간 제공
+                
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
