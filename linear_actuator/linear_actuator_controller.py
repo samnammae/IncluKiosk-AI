@@ -10,6 +10,9 @@ import RPi.GPIO as GPIO
 from time import sleep
 from pathlib import Path
 
+# GPIO 경고 비활성화
+GPIO.setwarnings(False)
+
 # === GPIO 핀 설정 ===
 PUL = 17   # Pulse(전력 공급)
 DIR = 27   # Direction
