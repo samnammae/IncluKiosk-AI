@@ -297,10 +297,24 @@ async def ws_client():
             # 추적 시작을 별도 스레드에서 실행
             def run_track():
                 nonlocal result_status
-                result_status = track_height()
+                try:
+                    result_status = track_height()
+                except Exception as e:
+                    print(f"[Height Worker] track_height() 예외: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    result_status = "error"
             
             track_thread = threading.Thread(target=run_track, daemon=True)
             track_thread.start()
+            
+            # 스레드가 시작될 시간 확보
+            await asyncio.sleep(0.5)
+            
+            # 스레드가 즉시 종료되었는지 확인
+            if not track_thread.is_alive():
+                print("[Height Worker] ⚠️ track_height() 스레드가 즉시 종료됨")
+                raise Exception("track_height failed to start")
             
             # WebSocket 메시지 수신 대기 (중단 명령용)
             try:
@@ -334,9 +348,18 @@ async def ws_client():
     
     except Exception as e:
         print(f"[Height Worker] 오류: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         ws_connection = None
 
 
 if __name__ == "__main__":
-    asyncio.run(ws_client())
+    print("[Height Worker] 프로세스 시작")
+    try:
+        asyncio.run(ws_client())
+    except Exception as e:
+        print(f"[Height Worker] 메인 예외: {e}")
+        import traceback
+        traceback.print_exc()
+    print("[Height Worker] 프로세스 종료")

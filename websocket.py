@@ -139,9 +139,10 @@ async def start_height_worker():
     print("[Height] 워커 시작")
     height_proc = subprocess.Popen(
         ["sudo", "-E", "python", HEIGHT_WORKER],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stdout=sys.stdout,  # 표준 출력으로 에러 확인
+        stderr=sys.stderr   # 표준 에러로 에러 확인
     )
+    print(f"[Height] 프로세스 PID: {height_proc.pid}")
 
 # 🆕 높이 조절 워커 중단
 async def stop_height_worker():
