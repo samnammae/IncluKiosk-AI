@@ -230,7 +230,6 @@ def track_height():
     last_detection_time = time.time()
     last_print_t = 0
     last_state = None
-    frame_idx = 0
 
     try:
         while not should_stop:
@@ -240,18 +239,6 @@ def track_height():
                 time.sleep(0.1)
                 continue
 
-            frame_idx += 1
-            
-            # 🔍 처음 몇 프레임을 저장해서 확인
-            if frame_idx <= 5:
-                filename = f"/tmp/frame_{frame_idx}.jpg"
-                cv2.imwrite(filename, frame)
-                print(f"[DEBUG] 프레임 저장: {filename}")
-                
-            # 디버그: 프레임 정보
-            if frame_idx % 60 == 0:
-                debug_log(f"Frame {frame_idx}: shape={frame.shape}, dtype={frame.dtype}")
-            
             # 얼굴 검출
             faces = detect_faces_ssd(face_interpreter, frame, MIN_DET_CONF)
 
@@ -373,11 +360,16 @@ def track_height():
         cap.release()
         cleanup_motor()
         
+        print("finish cleanup_motor")
+        
         if exceed_max_height() or exceed_min_height():
+            print("if exceed_max_height() or exceed_min_height()")
             return "limit_reached"
         elif time.time() - last_detection_time > NO_DETECTION_TIMEOUT:
+            print("elif time.time() - last_detection_time > NO_DETECTION_TIMEOUT")
             return "timeout"
         else:
+            print("else")
             return "complete"
 
 
