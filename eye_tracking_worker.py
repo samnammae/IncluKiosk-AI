@@ -794,6 +794,7 @@ while cap.isOpened():
     # 결과 처리
     face_landmarks = None
     if results and results.multi_face_landmarks:
+        print("if results and results.multi_face_landmarks")
         raw_lms = results.multi_face_landmarks[0].landmark
         face_landmarks = to_global_landmarks(raw_lms, roi, w, h)
 
@@ -820,9 +821,61 @@ while cap.isOpened():
             except Exception as e:
                 dbg(f"[WS] EYE_READY send error: {e}")
             sent_ready = True
+            
+        # ⭐⭐⭐ 얼굴 감지되고 캘리브레이션 요청이 있으면 자동 실행 ⭐⭐⭐
+        if eye_calib_requested and not (left_sphere_locked and right_sphere_locked):
+            dbg("[Calib] Auto-triggering calibration (face mesh ready)")
+            print("[Calib] 🎯 얼굴 감지됨 → 자동 캘리브레이션 시작")
+            
+            current_nose_scale = compute_scale(last_nose_points_3d)
+            # LEFT
+            left_sphere_local_offset = last_R_final.T @ (last_iris_3d_left - last_head_center)
+            camera_dir_world = np.array([0, 0, 1], dtype=float)
+            camera_dir_local = last_R_final.T @ camera_dir_world
+            left_sphere_local_offset += base_radius * camera_dir_local
+            left_calibration_nose_scale = current_nose_scale
+            # RIGHT
+            right_sphere_local_offset = last_R_final.T @ (last_iris_3d_right - last_head_center)
+            right_sphere_local_offset += base_radius * camera_dir_local
+            right_calibration_nose_scale = current_nose_scale
+            left_sphere_locked = True
+            right_sphere_locked = True
 
+            # Monitor plane
+            sphere_world_l_calib = last_head_center + last_R_final @ left_sphere_local_offset
+            sphere_world_r_calib = last_head_center + last_R_final @ right_sphere_local_offset
+            left_dir = last_iris_3d_left - sphere_world_l_calib
+            right_dir = last_iris_3d_right - sphere_world_r_calib
+            if np.linalg.norm(left_dir) > 1e-9: left_dir /= np.linalg.norm(left_dir)
+            if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
+            forward_hint = (left_dir + right_dir) * 0.5
+            if np.linalg.norm(forward_hint) > 1e-9:
+                forward_hint /= np.linalg.norm(forward_hint)
+            else:
+                forward_hint = None
+            gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
+            gaze_dir = forward_hint
+            monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = create_monitor_plane(
+                last_head_center, last_R_final, face_landmarks, w, h,
+                forward_hint=forward_hint,
+                gaze_origin=gaze_origin,
+                gaze_dir=gaze_dir
+            )
+            dbg("[Calib] ✓ Complete (left/right locked)")
+            print("[Calibration] ✓ Complete")  # ⭐ 이제 이게 찍힐 것!
+        
+            # 허브에 완료 알림
+            try:
+                asyncio.run(send_internal({"type": "EYE_CALIB_COMPLETE"}))
+            except Exception as e:
+                dbg(f"[WS] EYE_CALIB_COMPLETE send error: {e}")
+
+            # 플래그 초기화
+            eye_calib_requested = False
+            
     # Eye sphere tracking & gaze
     if last_head_center is not None and last_iris_3d_left is not None:
+        print("if last_head_center is not None and last_iris_3d_left is not None")
         if left_sphere_locked:
             current_nose_scale = compute_scale(last_nose_points_3d)
             scale_ratio = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
