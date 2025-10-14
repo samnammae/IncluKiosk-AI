@@ -499,11 +499,11 @@ async def handle_frontend(websocket):
                 eye_ready_event = asyncio.Event()  # 현재 이벤트 루프에서 새로 생성
                 start_eye()
     
-                # 🆕 프론트엔드에 대기 메시지 전송
-                await send_to_front({"type": "EYE_WAITING", "message": "얼굴을 카메라에 맞춰주세요..."})
+                # # 🆕 프론트엔드에 대기 메시지 전송
+                # await send_to_front({"type": "EYE_WAITING", "message": "얼굴을 카메라에 맞춰주세요..."})
     
                 try:
-                    await asyncio.wait_for(eye_ready_event.wait(), timeout=8.0)
+                    await asyncio.wait_for(eye_ready_event.wait(), timeout=30.0)
                     print("[EYE_CALIB] worker READY 확인")
                 except asyncio.TimeoutError:
                     print("[EYE_CALIB] ⚠ READY 타임아웃 → 어쨌든 진행")
