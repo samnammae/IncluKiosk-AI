@@ -223,14 +223,13 @@ async def stop_height_worker():
         height_proc = None
         height_set_processing = False
 
-# === 🆕 모든 워커 안전하게 정지 (eye_tracking_worker 시작 전 필수) ===
 async def stop_all_workers_safely():
     """카메라/TPU를 사용하는 모든 워커를 안전하게 정지"""
     print("[Safety] 모든 워커 정지 시작...")
     
     # 1. 내부 워커들에게 정지 신호 전송
     await send_to_internal_worker({"type": "STOP_ALL"})
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.5)
     
     # 2. 프로세스 종료
     global eye_proc
@@ -238,8 +237,20 @@ async def stop_all_workers_safely():
     await stop_height_worker()
     await stop_pir()
     
-    # 3. 장치 해제 대기
-    await asyncio.sleep(0.8)
+    # 3. eye_proc가 완전히 종료될 때까지 대기 (추가!)
+    if eye_proc is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, eye_proc.wait),
+                timeout=3.0
+            )
+            print("[Safety] eye_proc 종료 확인")
+        except:
+            pass
+    
+    # 4. 카메라 해제 대기
+    await asyncio.sleep(1.5)
     print("[Safety] 모든 워커 정지 완료")
 
 # 대화 주문 핸들러
