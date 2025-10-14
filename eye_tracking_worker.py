@@ -41,6 +41,181 @@ fist_enabled           = True   # True: 주먹 인식, False: 비활성 (EYE_ORD
 BASE_DIR = Path(__file__).resolve().parent
 # === 수정: 내부 서버 포트로 변경 ===
 WS_URL = "ws://localhost:8766"  # websocket.py의 내부 서버로 연결
+# ============================================
+# 클릭 컨트롤러 (Progressive Dwell Click)
+# ============================================
+
+class ClickController:
+    """Progressive Dwell Click 로직 관리"""
+    
+    def __init__(self, 
+                 prepare_time=0.4,
+                 progress_time=0.8,
+                 click_time=1.2,
+                 radius=40,
+                 cooldown=0.5):
+        
+        self.prepare_time = prepare_time
+        self.progress_time = progress_time
+        self.click_time = click_time
+        self.radius = radius
+        self.cooldown = cooldown
+        
+        self.dwell_start_time = None
+        self.dwell_center = None
+        self.last_click_time = 0.0
+        self.enabled = False  # 기본값: 비활성화
+        self.click_count = 0
+    
+    def update(self, current_pos, current_time):
+        if not self.enabled:
+            self._reset()
+            return self._idle_state()
+        
+        if current_time - self.last_click_time < self.cooldown:
+            self._reset()
+            return self._idle_state()
+        
+        if current_pos is None:
+            self._reset()
+            return self._idle_state()
+        
+        x, y = current_pos
+        
+        if self.dwell_start_time is None:
+            self.dwell_start_time = current_time
+            self.dwell_center = (x, y)
+            return self._idle_state()
+        
+        dist = np.sqrt((x - self.dwell_center[0])**2 + 
+                       (y - self.dwell_center[1])**2)
+        
+        if dist > self.radius:
+            self._reset()
+            return self._idle_state()
+        
+        elapsed = current_time - self.dwell_start_time
+        
+        if elapsed >= self.click_time:
+            self.last_click_time = current_time
+            self.click_count += 1
+            self._reset()
+            return {
+                'state': 'click',
+                'progress': 1.0,
+                'should_click': True,
+                'center': self.dwell_center,
+                'elapsed': elapsed
+            }
+        
+        elif elapsed >= self.progress_time:
+            progress = (elapsed - self.progress_time) / (self.click_time - self.progress_time)
+            return {
+                'state': 'progress',
+                'progress': 0.5 + progress * 0.5,
+                'should_click': False,
+                'center': self.dwell_center,
+                'elapsed': elapsed
+            }
+        
+        elif elapsed >= self.prepare_time:
+            progress = (elapsed - self.prepare_time) / (self.progress_time - self.prepare_time)
+            return {
+                'state': 'prepare',
+                'progress': progress * 0.5,
+                'should_click': False,
+                'center': self.dwell_center,
+                'elapsed': elapsed
+            }
+        
+        else:
+            return self._idle_state()
+    
+    def _reset(self):
+        self.dwell_start_time = None
+        self.dwell_center = None
+    
+    def _idle_state(self):
+        return {
+            'state': 'idle',
+            'progress': 0.0,
+            'should_click': False,
+            'center': None,
+            'elapsed': 0.0
+        }
+    
+    def set_enabled(self, enabled):
+        self.enabled = enabled
+        if not enabled:
+            self._reset()
+
+
+def draw_click_feedback(frame, click_state):
+    """프레임에 클릭 진행 상황 표시"""
+    state = click_state['state']
+    
+    if state == 'idle':
+        return
+    
+    center = click_state['center']
+    if center is None:
+        return
+    
+    cx, cy = center
+    progress = click_state['progress']
+    
+    radius_base = 30
+    radius_outer = 35
+    
+    if state == 'prepare':
+        color = (255, 200, 0)
+        thickness = 3
+        
+        cv2.circle(frame, (cx, cy), radius_outer, color, 2)
+        
+        angle = int(360 * progress)
+        if angle > 0:
+            cv2.ellipse(frame, (cx, cy), (radius_base, radius_base),
+                       -90, 0, angle, color, thickness)
+        
+        cv2.circle(frame, (cx, cy), 3, color, -1)
+        
+        cv2.putText(frame, "Preparing...", (cx - 50, cy - 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+    elif state == 'progress':
+        color = (0, 255, 0)
+        thickness = 4
+        
+        cv2.circle(frame, (cx, cy), radius_outer, color, 2)
+        
+        angle = int(360 * progress)
+        cv2.ellipse(frame, (cx, cy), (radius_base, radius_base),
+                   -90, 0, angle, color, thickness)
+        
+        cv2.circle(frame, (cx, cy), 5, color, -1)
+        
+        remaining = 1.2 - click_state['elapsed']
+        cv2.putText(frame, f"Click in {remaining:.1f}s", (cx - 60, cy - 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+    elif state == 'click':
+        color = (0, 0, 255)
+        cv2.circle(frame, (cx, cy), radius_outer + 5, color, 5)
+        cv2.circle(frame, (cx, cy), 8, color, -1)
+        
+        cv2.putText(frame, "CLICK!", (cx - 30, cy - 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+
+# 클릭 컨트롤러 인스턴스 생성
+click_controller = ClickController(
+    prepare_time=0.4,
+    progress_time=0.8,
+    click_time=1.2,
+    radius=40,
+    cooldown=0.5
+)
 
 import logging, sys, os, datetime
 BASE_DIR = Path(__file__).resolve().parent
@@ -71,7 +246,7 @@ dbg(f"PWD={os.getcwd()}, USER={os.getenv('USER')}, DISPLAY={os.getenv('DISPLAY')
 
 
 async def ws_receiver():
-    global toggle_mouse_requested, eye_calib_requested, force_mouse_on, fist_enabled
+    global toggle_mouse_requested, eye_calib_requested, force_mouse_on, fist_enabled, click_controller
     while True:
         try:
             dbg("[WS] trying to connect...")
@@ -89,26 +264,33 @@ async def ws_receiver():
 
                     if msg_type == "EYE_CALIB_ON":
                         eye_calib_requested = True
-                        dbg("[WS] → eye_calib_requested=True")
-                        print("[WS] EYE_CALIB_ON → eye_calib_requested=True")
+                        fist_enabled = False
+                        force_mouse_on = False
+                        click_controller.set_enabled(False)
+                        dbg("[WS] → eye_calib_requested=True, ALL features OFF")
+                        print("[WS] EYE_CALIB_ON → 캘리브레이션 모드 (모든 기능 OFF)")
 
                     elif msg_type == "EYE_ORDER_ON":
-                        # 주먹 인식 끄고 (요구5), 마우스 제어는 계속
+                        # 눈 주문: 마우스 + 클릭 ON, 주먹 OFF
                         fist_enabled = False
                         force_mouse_on = True
-                        dbg("[WS] → fist_enabled=False, force_mouse_on=True")
-                        print("[WS] EYE_ORDER_ON → fist_enabled=False, force_mouse_on=True")
+                        click_controller.set_enabled(True)
+                        dbg("[WS] → fist=False, mouse=True, click=True")
+                        print("[WS] EYE_ORDER_ON → 주먹OFF, 마우스ON, 클릭ON")
 
                     elif msg_type == "MOUSE_ON":
+                        fist_enabled = True
                         force_mouse_on = True
-                        dbg("[WS] → force_mouse_on=True")
-                        print("[WS] MOUSE_ON → force_mouse_on=True")
+                        click_controller.set_enabled(False)
+                        dbg("[WS] → fist=True, mouse=True, click=False")
+                        print("[WS] MOUSE_ON → 주먹ON, 마우스ON, 클릭OFF")
                     
                     # === 새로 추가: 모든 기능 정지 (CHAT_ORDER_ON, NORMAL_ORDER_ON, ALL_RESET 시) ===
                     elif msg_type == "STOP_ALL":
                         fist_enabled = False
                         force_mouse_on = False
-                        dbg("[WS] → STOP_ALL: fist_enabled=False, force_mouse_on=False")
+                        click_controller.set_enabled(False)
+                        dbg("[WS] → STOP_ALL: all features disabled")
                         print("[WS] STOP_ALL → 모든 기능 비활성화")
                         
                     elif msg_type == "TOUCH_ACTIVE":
@@ -665,6 +847,34 @@ while cap.isOpened():
             )
             dbg(f"[Gaze] screen=({screen_x},{screen_y}) raw_yaw={raw_yaw:.2f} raw_pitch={raw_pitch:.2f}")
 
+            # ========== 클릭 로직 추가 ==========
+            
+            # 1. 클릭 컨트롤러 업데이트
+            current_time = time.time()
+            
+            # 터치 중이거나 홀드오프 중이면 None 전달
+            if touch_active or (current_time - last_touch_end < TOUCH_HOLDOFF):
+                current_pos = None
+            else:
+                current_pos = (screen_x, screen_y)
+            
+            click_state = click_controller.update(current_pos, current_time)
+            
+            # 2. 클릭 실행
+            if click_state['should_click']:
+                try:
+                    pyautogui.click(screen_x, screen_y)
+                    dbg(f"[Click] ✓ at ({screen_x}, {screen_y}) [count={click_controller.click_count}]")
+                    print(f"[Click] ✓ Executed at ({screen_x}, {screen_y})")
+                except Exception as e:
+                    dbg(f"[Click] ✗ Error: {e}")
+                    print(f"[Click] Error: {e}")
+            
+            # 3. 시각화 (프레임에 그리기)
+            draw_click_feedback(frame, click_state)
+            
+            # ====================================
+
             # 강제 마우스 ON 명령 처리
             if force_mouse_on:
                 mouse_control_enabled = True
@@ -691,6 +901,10 @@ while cap.isOpened():
         status_text.append("Calib: OK")
     if not fist_enabled:
         status_text.append("Fist: OFF")
+    if click_controller.enabled:
+        status_text.append("Click: ON")
+    else:
+        status_text.append("Click: OFF")
 
     for i, text in enumerate(status_text):
         color = (0, 255, 0) if "OK" in text or "OFF" in text else (0, 0, 255)
