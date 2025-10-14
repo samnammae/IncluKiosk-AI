@@ -989,6 +989,12 @@ while cap.isOpened():
             )
             dbg("[Calib] ✓ Complete (left/right locked)")
             print("[Calibration] ✓ Complete")
+        
+            # ⭐ 허브에 완료 알림
+            try:
+                asyncio.run(send_internal({"type": "EYE_CALIB_COMPLETE"}))
+            except Exception as e:
+                dbg(f"[WS] EYE_CALIB_COMPLETE send error: {e}")
 
             if eye_calib_requested:
                 dbg("[Calib] consumed eye_calib_requested=True → False")
