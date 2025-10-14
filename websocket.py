@@ -173,52 +173,68 @@ async def start_height_worker():
     # 프로세스 종료를 감시해서 플래그를 적절히 되돌리기
     async def _watch():
         global height_set_processing, height_proc
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, height_proc.wait)
-        print("[Height] 워커 종료 감지")
         
-        try:
-            with open("/tmp/height_worker.log", "r") as f:
-                log_content = f.read()
-                if log_content.strip():
-                    print("=== Height Worker 로그 ===")
-                    print(log_content)
-                    print("=== 로그 끝 ===")
-        except Exception as e:
-            print(f"[Height] 로그 읽기 실패: {e}")
+        # ⬇️ 로컬 변수에 저장 (경합 상태 방지!)
+        proc_to_watch = height_proc
         
-        height_set_processing = False
-        height_proc = None
+        if proc_to_watch:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, proc_to_watch.wait)
+            print("[Height] 워커 종료 감지")
+            
+            try:
+                with open("/tmp/height_worker.log", "r") as f:
+                    log_content = f.read()
+                    if log_content.strip():
+                        print("=== Height Worker 로그 ===")
+                        print(log_content)
+                        print("=== 로그 끝 ===")
+            except Exception as e:
+                print(f"[Height] 로그 읽기 실패: {e}")
+            
+            # ⬇️ 전역 변수가 아직 이 프로세스를 가리킬 때만 초기화
+            if height_proc == proc_to_watch:
+                height_set_processing = False
+                height_proc = None
+    
     asyncio.create_task(_watch())
 
-# 높이 조절 워커 중단
 async def stop_height_worker():
     """높이 조절 중단 (graceful shutdown)"""
     global height_proc, height_set_processing
-    if not is_running(height_proc):
+    
+    # ⬇️ 로컬 변수에 저장 (경합 상태 방지!)
+    proc = height_proc
+    
+    if not is_running(proc):
         print("[Height] 이미 중단됨")
-        height_set_processing = False  # 플래그 리셋
+        height_set_processing = False
+        height_proc = None
         return
     
     print("[Height] 중단 명령 전송")
-    # WebSocket으로 중단 명령 전송
     await send_to_internal_worker({"type": "HEIGHT_SET_OFF"})
     
     # 프로세스 종료 대기 (최대 5초)
     try:
         loop = asyncio.get_running_loop()
         await asyncio.wait_for(
-            loop.run_in_executor(None, height_proc.wait),
+            loop.run_in_executor(None, proc.wait),  # ⬅️ proc 사용
             timeout=5.0
         )
         print("[Height] 정상 종료됨")
     except asyncio.TimeoutError:
         print("[Height] 5초 대기 후 강제 종료")
-        height_proc.terminate()
-        try:
-            height_proc.wait(timeout=2)
-        except:
-            height_proc.kill()
+        # ⬇️ None 체크 추가
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except:
+                try:
+                    proc.kill()
+                except:
+                    pass
     finally:
         height_proc = None
         height_set_processing = False
