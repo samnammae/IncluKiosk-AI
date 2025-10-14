@@ -464,7 +464,7 @@ async def handle_frontend(websocket):
                 await stop_pir(websocket)
                 
                 # 4. 프론트에게 완료 알림
-                await send_to_front({"type": "PIR_END"})
+                # await send_to_front({"type": "PIR_END"})
                 print("[PIR_OFF] 모든 워커 종료 완료")
 
             # === 높이조절 ===
