@@ -12,6 +12,13 @@ from asyncio import Event
 from linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
 
+import time  # 파일 상단에 추가
+
+# 전역 변수에 추가
+height_set_processing = False
+height_last_request_time = 0  # ⬅️ 새로 추가
+HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
+
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
 PYTHON = sys.executable
@@ -156,6 +163,7 @@ async def start_height_worker():
     
     # 처리 시작 플래그 설정
     height_set_processing = True
+    await asyncio.sleep(0.1)
     
     print("[Height] 워커 시작")
     
@@ -462,6 +470,17 @@ async def handle_frontend(websocket):
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
                 print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
+                
+                # ⬇️ 디바운싱 체크 추가
+                global height_last_request_time
+                now = time.time()
+                
+                if now - height_last_request_time < HEIGHT_DEBOUNCE_SEC:
+                    print(f"[Height] ⚠️ 디바운스 무시 ({now - height_last_request_time:.1f}초 < {HEIGHT_DEBOUNCE_SEC}초)")
+                    continue
+                
+                height_last_request_time = now
+                
                 # 🆕 모든 워커 안전하게 정지
                 await stop_all_workers_safely()
                 await start_height_worker()
