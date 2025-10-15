@@ -9,7 +9,7 @@ from functools import partial
 import tts_stt
 from asyncio import Event
 
-from linear_actuator.linear_actuator_controller import on_shutdown
+from set_height.linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
 
 import time  # 파일 상단에 추가
