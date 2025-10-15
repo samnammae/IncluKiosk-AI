@@ -148,7 +148,7 @@ def track_height():
                 
                 diff = ema_y - target_y
                 print(f"[FACE] y_center={y_center:.3f}, ema_y={ema_y:.3f}, target_y={target_y:.3f}, diff={diff:.3f}")
-                moveTarget=round(config.WITH_FACE*diff*500)
+                moveTarget=int(config.WITH_FACE*diff*100)
                 if abs(diff) <= deadband: 
                     # 중앙 안정
                     state = "center"
