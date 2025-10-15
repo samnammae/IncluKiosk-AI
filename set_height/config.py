@@ -17,7 +17,7 @@ STABLE_FRAMES = 10          # 안정화 판단 프레임 수
 
 # ====== 모터 속도 설정 ======
 WITH_FACE = 100         # 얼굴 감지 시 모터 속도
-WITHOUT_FACE = 500      # 얼굴 미감지 시 모터 속도
+WITHOUT_FACE = 1000      # 얼굴 미감지 시 모터 속도
 
 # ====== 타임아웃 설정 ======
 AUTO_EXIT_STABLE_TIME = 3   # 안정화 후 자동 종료 시간 (초)
