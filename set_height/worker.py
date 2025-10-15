@@ -148,7 +148,7 @@ def track_height():
                 
                 diff = ema_y - target_y
                 print(f"[FACE] y_center={y_center:.3f}, ema_y={ema_y:.3f}, target_y={target_y:.3f}, diff={diff:.3f}")
-
+                moveTarget=round(config.WITH_FACE*diff*500)
                 if abs(diff) <= deadband: 
                     # 중앙 안정
                     state = "center"
@@ -158,7 +158,7 @@ def track_height():
                     state = "up"
                     stable_count = 0
                     print(f"[MOVE UP TEST] diff={diff:.3f} → 얼굴이 목표보다 아래에 있음 (↑)")
-                    moveUp(config.WITH_FACE*diff*500)
+                    moveUp(moveTarget)
                     
                     if exceed_max_height():
                         print("🚫 최대 높이 도달 → 종료")
@@ -168,7 +168,7 @@ def track_height():
                     state = "down"
                     stable_count = 0
                     print(f"[MOVE DOWN TEST] diff={diff:.3f} → 얼굴이 목표보다 위에 있음 (↓)")
-                    moveDown(config.WITH_FACE*diff*500)
+                    moveDown(moveTarget)
                     
                     if exceed_min_height():
                         print("🚫 최소 높이 도달 → 종료")
