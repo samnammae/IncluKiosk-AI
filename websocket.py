@@ -683,7 +683,7 @@ async def handle_internal_worker(websocket):
                 
             elif msg_type == "EYE_CALIB_COMPLETE":
                 print("[Hub] ✅ 캘리브레이션 완료 확인")
-                await send_to_front({"type": "EYE_CALIB_COMPLETE"})
+                await send_to_front({"type": "EYE_CALIB_END"})
     
     except websockets.exceptions.ConnectionClosed:
         print("[Internal Worker] 연결 끊김")
