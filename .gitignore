@@ -2,7 +2,6 @@
 /IncluKiosk_venv/
 /hc_venv/
 yolov8n.pt
-screen_position.txt
 backup_Webcam3D_MonitorTracking.py
 face-detector-quantized_edgetpu.tflite
 gcp-tts-key.json
@@ -14,3 +13,4 @@ ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite
 /tts_stt/__pycache__
 /models/
 /unused/
+/eye_tracking/screen_position.txt
