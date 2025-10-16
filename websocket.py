@@ -144,10 +144,11 @@ def start_eye():
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
-        [PYTHON, EYE_SCRIPT],
+        [PYTHON, "-m", "eye_tracking.worker"],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        env=env
+        env=env,
+        cwd=str(BASE_DIR)
     )
 
 # === 높이 조절 관련 ===
@@ -174,9 +175,10 @@ async def start_height_worker():
     log_file = open("/tmp/height_worker.log", "w")
     
     height_proc = subprocess.Popen(
-        ["sudo", "-E", PYTHON, HEIGHT_WORKER],
+        ["sudo", "-E", PYTHON, "-m", "set_height.worker"],
         stdout=log_file,
-        stderr=subprocess.STDOUT
+        stderr=subprocess.STDOUT,
+        cwd=str(BASE_DIR)  # ✅ 작업 디렉토리 설정
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
     print(f"[Height] 로그 파일: /tmp/height_worker.log")
