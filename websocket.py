@@ -482,22 +482,19 @@ async def handle_frontend(websocket):
                 await send_json(websocket, {"type": "ERROR", "message": "Missing 'type' field"})
                 continue
 
-            print(f"파싱된 type: {msg_type}")
+            print(f"[Front→Hub] 수신: {msg_type}")
 
             # === 잠금화면 / PIR ===
             if msg_type == "PIR_ON":
                 await start_pir(websocket)
 
             elif msg_type == "PIR_OFF":
-                print("▣ ▣ ▣ PIR_OFF!!!")
                 await send_to_internal_worker({"type": "PIR_OFF"})
                 await asyncio.sleep(1.0)
                 await stop_pir(websocket)
 
             # === 높이조절 ===
-            elif msg_type == "HEIGHT_SET_ON":
-                print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
-                
+            elif msg_type == "HEIGHT_SET_ON":                
                 # ⬇️ 디바운싱 체크 추가
                 global height_last_request_time
                 now = time.time()
@@ -509,11 +506,10 @@ async def handle_frontend(websocket):
                 height_last_request_time = now
                 
                 # 🆕 모든 워커 안전하게 정지
-                await stop_all_workers_safely()
+                # await stop_all_workers_safely()
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
-                print("▣ ▣ ▣ HEIGHT_SET_CANCEL (사용자 중단)")
                 await stop_height_worker()
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
 
@@ -532,7 +528,6 @@ async def handle_frontend(websocket):
                 eye_calib_processing = True
                 
                 try:
-                    print("▣ ▣ ▣ EYE_CALIB_ON!!!(from frontend)")
                     # await stop_all_workers_safely()
                     await stop_workers(eye=False, height=True, pir=True)
 
@@ -561,7 +556,6 @@ async def handle_frontend(websocket):
                 
                 mode_select_processing = True
                 
-                print("▣ ▣ ▣ MODE_SELECT_ON!!!")
                 if not is_running(eye_proc):
                     print("[MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
                     await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
@@ -575,7 +569,6 @@ async def handle_frontend(websocket):
                     print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
                 mode_select_processing = False
                 chat_order_processing = True
                 # 대화 모드: eye_tracking_worker 종료
@@ -586,7 +579,6 @@ async def handle_frontend(websocket):
                     print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
                 mode_select_processing = False                
                 normal_order_processing = True
                 # 일반 모드: eye_tracking_worker 종료
@@ -597,7 +589,6 @@ async def handle_frontend(websocket):
                     print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ EYE_ORDER_ON!!!")
                 mode_select_processing = False
                 eye_order_processing = True
                 # eye_tracking_worker가 이미 실행중이면 그대로 유지 (캘리브레이션 보존!)
@@ -611,17 +602,14 @@ async def handle_frontend(websocket):
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
-                print("▣ ▣ ▣ TTS_ON!!!")
                 await handle_tts_on(websocket, data)
 
             elif msg_type == "STT_ON":
-                print("▣ ▣ ▣ STT_ON!!!")
                 loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
-                print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
                 
                 # 모든 상태 플래그 리셋
                 eye_calib_completed = False

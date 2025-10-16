@@ -11,7 +11,7 @@ import keyboard
 from collections import deque
 
 from . import config
-from .utils import setup_logging, dbg, print_boot_info, print_system_info
+from .utils import setup_logging, dbg, print_boot_info
 from .detection import init_mediapipe, mediapipe_face_detect, expand_and_clip_bbox, to_global_landmarks, is_fist
 from .gaze_tracking import compute_coordinate_box, convert_gaze_to_screen_coordinates
 from .calibration import CalibrationState, perform_eye_calibration, perform_screen_calibration, compute_gaze_vectors, perform_full_calibration
@@ -76,8 +76,6 @@ class EyeTrackingWorker:
         
         # Setup callbacks
         self._setup_callbacks()
-        
-        print_system_info()
     
     def _init_camera(self):
         """카메라 초기화"""
