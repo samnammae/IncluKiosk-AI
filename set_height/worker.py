@@ -235,27 +235,27 @@ def track_height():
             else:
                 stable_start_time = None
 
-            # 상태 출력
-            now = time.time()
-            if now - last_print_t >= config.PRINT_EVERY:
-                if state == "center":
-                    if stable_count >= config.STABLE_FRAMES:
-                        if last_state != "center":
-                            print("Centered ✅ (stable)")
-                    else:
-                        print(f"Centered… ({stable_count}/{config.STABLE_FRAMES})")
-                elif state == "up":
-                    print("Go down! (face/person above center)")
-                elif state == "down":
-                    print("Go up! (face/person below center)")
-                elif state == "hint_up":
-                    print("No face, person near top → Go up")
-                elif state == "hint_down":
-                    print("No face, person missing/near bottom → Go down")
-                else:
-                    print("Searching…")
-                last_print_t = now
-                last_state = state
+            # # 상태 출력
+            # now = time.time()
+            # if now - last_print_t >= config.PRINT_EVERY:
+            #     if state == "center":
+            #         if stable_count >= config.STABLE_FRAMES:
+            #             if last_state != "center":
+            #                 print("Centered ✅ (stable)")
+            #         else:
+            #             print(f"Centered… ({stable_count}/{config.STABLE_FRAMES})")
+            #     elif state == "up":
+            #         print("Go down! (face/person above center)")
+            #     elif state == "down":
+            #         print("Go up! (face/person below center)")
+            #     elif state == "hint_up":
+            #         print("No face, person near top → Go up")
+            #     elif state == "hint_down":
+            #         print("No face, person missing/near bottom → Go down")
+            #     else:
+            #         print("Searching…")
+            #     last_print_t = now
+            #     last_state = state
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt - 중단")

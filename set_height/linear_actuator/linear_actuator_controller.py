@@ -118,7 +118,7 @@ def moveUp(steps: int = DEFAULT_STEP):
 
     GPIO.output(DIR, GPIO.LOW)   # 위쪽 방향 (edited: HIGH > LOW)
     GPIO.output(ENA, GPIO.HIGH)   # 모터 활성화
-    print(f"[ACTUATOR] ↑ Move UP {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
+    # print(f"[ACTUATOR] ↑ Move UP {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
 
     for _ in range(steps):
         if exceed_max_height():
@@ -133,7 +133,7 @@ def moveUp(steps: int = DEFAULT_STEP):
         CUR_HEIGHT_STEP += 1
         _write_height_to_file(CUR_HEIGHT_STEP)
 
-    print(f"[ACTUATOR] ↑ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
+    # print(f"[ACTUATOR] ↑ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
     GPIO.output(ENA, GPIO.LOW)
 
 
@@ -153,7 +153,7 @@ def moveDown(steps: int = DEFAULT_STEP):
 
     GPIO.output(DIR, GPIO.HIGH)   # 아래쪽 방향 (edited: LOW > HIGH)
     GPIO.output(ENA, GPIO.HIGH)  # 모터 활성화
-    print(f"[ACTUATOR] ↓ Move DOWN {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
+    # print(f"[ACTUATOR] ↓ Move DOWN {steps} steps (Current: {CUR_HEIGHT_STEP}/{HEIGHT_MAX})")
 
     for _ in range(steps):
         if exceed_min_height():
@@ -170,7 +170,7 @@ def moveDown(steps: int = DEFAULT_STEP):
         _write_height_to_file(CUR_HEIGHT_STEP)
 
     CUR_HEIGHT_STEP = max(0, CUR_HEIGHT_STEP)
-    print(f"[ACTUATOR] ↓ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
+    # print(f"[ACTUATOR] ↓ Current step: {CUR_HEIGHT_STEP}/{HEIGHT_MAX}")
     GPIO.output(ENA, GPIO.LOW)
 
 
