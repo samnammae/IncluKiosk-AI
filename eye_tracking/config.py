@@ -17,7 +17,8 @@ WS_URL = "ws://localhost:8766"
 LOG_FILE = "/tmp/eye_tracking_optimized.log"
 
 # Screen Position File
-SCREEN_POSITION_FILE = str(BASE_DIR / "screen_position.txt")
+# SCREEN_POSITION_FILE = str(BASE_DIR / "screen_position.txt")
+SCREEN_POSITION_FILE = str(Path(__file__).resolve().parent / "screen_position.txt")
 
 # =====================
 # Performance Settings
