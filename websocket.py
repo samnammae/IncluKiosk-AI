@@ -521,9 +521,6 @@ async def handle_frontend(websocket):
                     eye_ready_event = asyncio.Event()
                     start_eye()
                     
-                    # 프론트에 대기 메시지 전송
-                    await send_to_front({"type": "EYE_WAITING", "message": "얼굴을 카메라에 맞춰주세요..."})
-                    
                     try:
                         await asyncio.wait_for(eye_ready_event.wait(), timeout=30.0)
                         print("[EYE_CALIB] worker READY 확인")
@@ -536,9 +533,9 @@ async def handle_frontend(websocket):
                     await send_to_internal_worker({"type": "EYE_CALIB_ON"})
                     print("[EYE_CALIB] 명령 전송 완료")
                     
-                    # ⭐ 캘리브레이션 완료 대기 (5초)
+                    # 캘리브레이션 완료 대기 (5초)
                     await asyncio.sleep(5.0)
-                    await send_to_front({"type": "EYE_CALIB_COMPLETE", "message": "캘리브레이션 완료"})
+                    await send_to_front({"type": "EYE_CALIB_END", "message": "캘리브레이션 완료"})
                     eye_calib_completed = True
                     
                 finally:
