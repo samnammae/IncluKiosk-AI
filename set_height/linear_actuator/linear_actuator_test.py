@@ -17,7 +17,7 @@ GPIO.setup(ENA, GPIO.OUT)
 print('Linear Actuator Control Initialized')
 
 # ===== 동작 설정 =====
-delay = 0.0005
+delay = 0.0004
 test_steps = 500
 cycle_delay = 1.0
 

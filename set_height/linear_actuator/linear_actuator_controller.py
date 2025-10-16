@@ -10,6 +10,9 @@ import RPi.GPIO as GPIO
 from time import sleep
 from pathlib import Path
 
+# GPIO 경고 비활성화
+GPIO.setwarnings(False)
+
 # === GPIO 핀 설정 ===
 PUL = 17   # Pulse(전력 공급)
 DIR = 27   # Direction
@@ -21,7 +24,7 @@ GPIO.setup(DIR, GPIO.OUT)
 GPIO.setup(ENA, GPIO.OUT)
 
 # === 기본 설정 ===
-STEP_DELAY = 0.0005     # 한 스텝당 지연 (속도 제어)
+STEP_DELAY = 0.0004     # 한 스텝당 지연 (속도 제어)
 DEFAULT_STEP = 10       # 기본 이동 스텝 수 (미세 조정용)
 # MAX_HEIGHT_STEP = 5000  # 액추에이터 최고 높이 (임시, 실제 측정 필요)
 CUR_HEIGHT_STEP = 0     # 액추에이터 현재 높이 (전역 상태)
@@ -58,9 +61,17 @@ def init_motor():
 # === 모터 정리 ===
 def cleanup_motor():
     """GPIO 및 모터 비활성화 (높이조절 프로세스 종료 시)"""
-    GPIO.output(ENA, GPIO.LOW)
-    GPIO.cleanup()
-    print("[ACTUATOR] 🧹 GPIO cleaned up and motor disabled")
+    try:
+        print("[ACTUATOR] 🔧 모터 비활성화 시작...")
+        GPIO.output(ENA, GPIO.LOW)
+        print("[ACTUATOR] 🔧 GPIO cleanup 시작...")
+        GPIO.cleanup()
+        print("[ACTUATOR] ✅ GPIO cleaned up and motor disabled")
+    except Exception as e:
+        print(f"[ACTUATOR] ⚠️ cleanup 중 예외 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        # 예외가 발생해도 함수는 정상 종료되도록 함
 
 # === 한계 확인 ===
 def exceed_max_height() -> bool:
