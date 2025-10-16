@@ -38,7 +38,6 @@ height_set_processing = False  # 처리 중 플래그
 eye_calib_processing = False  # 캘리브레이션 진행 중 플래그
 eye_calib_completed = False   # 캘리브레이션 완료 플래그 추가
 mode_select_processing = False  # 모드 선택 진행 중 플래그
-mode_select_completed = False  # 모드 선택 완료 플래그 추가
 
 eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
@@ -421,7 +420,7 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         await send_json(websocket, {"type": "ERR_END"})
 
 async def handle_frontend(websocket):
-    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, mode_select_processing
+    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing
     print("클라이언트 연결됨")
     
     # 프론트 연결 저장
@@ -595,6 +594,13 @@ async def handle_frontend(websocket):
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
                 print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
+                
+                global eye_calib_completed, mode_select_processing
+                
+                # 모든 상태 플래그 리셋
+                eye_calib_completed = False
+                eye_calib_processing = False
+                mode_select_processing = False
                 
                 # 1. 내부 워커들에게 정지 신호 먼저 전송
                 await send_to_internal_worker({"type": "STOP_ALL"})
