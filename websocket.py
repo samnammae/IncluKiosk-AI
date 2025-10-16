@@ -36,7 +36,9 @@ eye_proc = None
 height_proc = None
 height_set_processing = False  # 처리 중 플래그
 eye_calib_processing = False  # 캘리브레이션 진행 중 플래그
+eye_calib_completed = False   # 캘리브레이션 완료 플래그 추가
 mode_select_processing = False  # 모드 선택 진행 중 플래그
+mode_select_completed = False  # 모드 선택 완료 플래그 추가
 
 eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
@@ -422,7 +424,7 @@ async def handle_frontend(websocket):
     global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, mode_select_processing
     print("클라이언트 연결됨")
     
-    # ✅ 프론트 연결 저장
+    # 프론트 연결 저장
     frontend_ws = websocket
     clients.add(websocket)
     stt_fail_count = 0
@@ -497,7 +499,12 @@ async def handle_frontend(websocket):
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
-                # ⭐ 중복 방지
+                # 이미 캘리브레이션이 완료되었다면 무시
+                if eye_calib_completed:
+                    print("[EYE_CALIB] ✅ 이미 캘리브레이션 완료됨 - 무시")
+                    continue
+                
+                # 중복 방지
                 if eye_calib_processing:
                     print("[EYE_CALIB] ⚠ 이미 진행 중 - 무시")
                     continue
@@ -530,58 +537,42 @@ async def handle_frontend(websocket):
                     # ⭐ 캘리브레이션 완료 대기 (5초)
                     await asyncio.sleep(5.0)
                     await send_to_front({"type": "EYE_CALIB_COMPLETE", "message": "캘리브레이션 완료"})
+                    eye_calib_completed = True
                     
                 finally:
                     eye_calib_processing = False
 
             elif msg_type == "MODE_SELECT_ON":
-                # ⭐ 중복 방지
                 if mode_select_processing:
                     print("[MODE_SELECT] ⚠ 이미 진행 중 - 무시")
                     continue
                 
                 mode_select_processing = True
                 
-                try:
-                    print("▣ ▣ ▣ MODE_SELECT_ON!!!")
-                    if not is_running(eye_proc):
-                        print("[MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
-                        await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
-                    else:
-                        await send_to_internal_worker({"type": "MOUSE_ON"})
-                        print("[MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
-                        
-                        # ⭐ 딜레이 추가 (명령 처리 시간 확보)
-                        await asyncio.sleep(0.5)
-                        await send_to_front({"type": "MODE_SELECT_COMPLETE"})
-                finally:
-                    # ⭐ 0.5초 후 플래그 해제 (빠른 재요청 방지)
-                    await asyncio.sleep(0.5)
-                    mode_select_processing = False
-            elif msg_type == "TOUCH_START":
-                print("▣ ▣ ▣ TOUCH_START")
-                # 전역 플래그는 필요하면 쓰고, 워커로 브로드캐스트
-                # touch_active = True
-                await send_to_internal_worker({"type": "TOUCH_ACTIVE"})
-
-            elif msg_type == "TOUCH_END":
-                print("▣ ▣ ▣ TOUCH_END")
-                # touch_active = False
-                await send_to_internal_worker({"type": "TOUCH_IDLE"})
+                print("▣ ▣ ▣ MODE_SELECT_ON!!!")
+                if not is_running(eye_proc):
+                    print("[MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
+                    await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
+                else:
+                    await send_to_internal_worker({"type": "MOUSE_ON"})
+                    print("[MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
                 print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
+                mode_select_processing = False
                 # 대화 모드: eye_tracking_worker 종료
                 await handle_chat_order_on(websocket)
 
             elif msg_type == "NORMAL_ORDER_ON":
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
+                mode_select_processing = False
                 # 일반 모드: eye_tracking_worker 종료
                 await stop_all_workers_safely()
 
             elif msg_type == "EYE_ORDER_ON":
                 print("▣ ▣ ▣ EYE_ORDER_ON!!!")
+                mode_select_processing = False
                 # eye_tracking_worker가 이미 실행중이면 그대로 유지 (캘리브레이션 보존!)
                 if not is_running(eye_proc):
                     print("[EYE_ORDER] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
@@ -601,7 +592,7 @@ async def handle_frontend(websocket):
                 loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
-            # === 🆕 ALL_RESET: 모든 기능 완전 정지 ===
+            # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
                 print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
                 
