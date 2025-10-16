@@ -140,6 +140,11 @@ def stt_once(
     - mode="fixed": duration초 고정 녹음
     """
     eng = (engine or os.environ.get("STT_ENGINE") or "google").lower()
+    
+    print(f"[DEBUG] engine 파라미터: {engine}")
+    print(f"[DEBUG] STT_ENGINE 환경변수: {os.environ.get('STT_ENGINE')}")
+    print(f"[DEBUG] 최종 선택된 엔진: {eng}")
+    
     if eng not in ("google", "naver"):
         eng = "google"
     print(f"[STT] Engine selected = {eng}  (mode={mode}, sr={sample_rate}, lang={language_code})")
