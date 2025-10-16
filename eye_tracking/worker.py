@@ -267,8 +267,6 @@ class EyeTrackingWorker:
                 self.calib_state, head_center, R_final, nose_points_3d,
                 iris_3d_left, iris_3d_right, face_landmarks, self.w, self.h
             )
-            
-            dbg("[Calib] ✓ Full calibration complete (eye position + screen center)")
             print("[Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
             
             asyncio.run(self.ws_handler.send_calib_complete())

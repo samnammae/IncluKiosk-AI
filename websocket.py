@@ -467,7 +467,6 @@ async def handle_frontend(websocket):
 
     try:
         async for raw in websocket:
-            print(f"받은 메시지: {raw}")
             try:
                 data = json.loads(raw)
                 if not isinstance(data, dict):
@@ -482,7 +481,7 @@ async def handle_frontend(websocket):
                 await send_json(websocket, {"type": "ERROR", "message": "Missing 'type' field"})
                 continue
 
-            print(f"[Front→Hub] 수신: {msg_type}")
+            print(f"[Front→Hub] 수신: {msg_type} - {msg_text}")
 
             # === 잠금화면 / PIR ===
             if msg_type == "PIR_ON":
@@ -644,7 +643,7 @@ async def handle_frontend(websocket):
 # === 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_workers, height_proc, height_set_processing, eye_ready_event
+    global internal_workers, height_proc, height_set_processing, eye_ready_event, eye_calib_completed
     internal_workers.add(websocket)
     print("[Internal Worker] 연결됨 (포트 8766)")
     
