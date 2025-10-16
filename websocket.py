@@ -38,6 +38,9 @@ height_set_processing = False  # 처리 중 플래그
 eye_calib_processing = False  # 캘리브레이션 진행 중 플래그
 eye_calib_completed = False   # 캘리브레이션 완료 플래그 추가
 mode_select_processing = False  # 모드 선택 진행 중 플래그
+chat_order_processing = False  # 대화 주문 진행 중 플래그
+normal_order_processing = False # 일반 주문 진행 중 플래그
+eye_order_processing = False # 아이트래킹 주문 진행 중 플래그
 
 eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
@@ -420,7 +423,7 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         await send_json(websocket, {"type": "ERR_END"})
 
 async def handle_frontend(websocket):
-    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing
+    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing, chat_order_processing, normal_order_processing, eye_order_processing
     print("클라이언트 연결됨")
     
     # 프론트 연결 저장
@@ -558,20 +561,35 @@ async def handle_frontend(websocket):
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
+                if chat_order_processing == True:
+                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    continue
+                
                 print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
                 mode_select_processing = False
+                chat_order_processing = True
                 # 대화 모드: eye_tracking_worker 종료
                 await handle_chat_order_on(websocket)
 
             elif msg_type == "NORMAL_ORDER_ON":
+                if normal_order_processing == True:
+                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    continue
+                
                 print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
-                mode_select_processing = False
+                mode_select_processing = False                
+                normal_order_processing = True
                 # 일반 모드: eye_tracking_worker 종료
                 await stop_all_workers_safely()
 
             elif msg_type == "EYE_ORDER_ON":
+                if eye_order_processing == True:
+                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    continue
+                
                 print("▣ ▣ ▣ EYE_ORDER_ON!!!")
                 mode_select_processing = False
+                eye_order_processing = True
                 # eye_tracking_worker가 이미 실행중이면 그대로 유지 (캘리브레이션 보존!)
                 if not is_running(eye_proc):
                     print("[EYE_ORDER] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
@@ -599,6 +617,7 @@ async def handle_frontend(websocket):
                 eye_calib_completed = False
                 eye_calib_processing = False
                 mode_select_processing = False
+                chat_order_processing = False
                 
                 # 1. 내부 워커들에게 정지 신호 먼저 전송
                 await send_to_internal_worker({"type": "STOP_ALL"})
