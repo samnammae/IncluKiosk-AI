@@ -13,3 +13,4 @@ ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite
 /linear_actuator/__pycache__
 /tts_stt/__pycache__
 /models/
+/unused/
