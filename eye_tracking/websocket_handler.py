@@ -32,6 +32,8 @@ class WebSocketHandler:
         
         # 디버그 로거
         self.logger = None
+        
+        self.receiver_running = False
     
     def set_logger(self, logger):
         """로거 설정"""
@@ -146,6 +148,12 @@ class WebSocketHandler:
     
     def start_receiver(self):
         """수신 스레드 시작"""
+        if self.receiver_running:  # 이미 실행 중이면 무시
+            self._log("[WS] receiver already running")
+            return
+        
+        self.receiver_running = True
+        
         def runner():
             asyncio.run(self._receiver())
         

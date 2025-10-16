@@ -525,7 +525,7 @@ async def handle_frontend(websocket):
                     continue
                 
                 eye_calib_processing = True
-                
+        
                 try:
                     # await stop_all_workers_safely()
                     await stop_workers(eye=False, height=True, pir=True)
@@ -654,34 +654,29 @@ async def handle_internal_worker(websocket):
             print(f"[Worker→Hub] 수신: {msg_type}")
             
             if msg_type == "EYE_READY":
-                print("[Hub] eye worker READY")
-                if eye_ready_event is not None:  # None 체크 추가
+                if eye_ready_event is not None and not eye_ready_event.is_set():
                     eye_ready_event.set()
+                    print("[Hub] eye worker READY 설정")
                 
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(in handle_internal_worker, from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
                 
             # PIR 종료 감지
             elif msg_type == "PIR_END":
-                print("▣ ▣ ▣ PIR_END(in handle_internal_worker, from pir-worker)")
                 await send_to_front({"type": "PIR_END"})
                 
             # PIR 워커 정상 종료 (WebSocket 연결 끊김 감지)
             elif msg_type == "PIR_WORKER_EXIT":
-                print("[Hub] PIR 워커 정상 종료")
                 await send_to_front({"type": "PIR_END"})
                 workers["PIR"] = None
             
             # 주먹 감지
             elif msg_type == "FIST_DETECTED":
-                print("▣ ▣ ▣ FIST_DETECTED(from eye-worker)")
                 await send_to_front({"type": "FIST_DETECTED"})
             
             # 높이 조절 완료
             elif msg_type == "HEIGHT_SET_END":
-                print("[Hub] ✅ 높이 조절 정상 완료")
                 await send_to_front({"type": "HEIGHT_SET_END"})
                 height_proc = None
                 height_set_processing = False
@@ -701,7 +696,6 @@ async def handle_internal_worker(websocket):
                 height_set_processing = False
                 
             elif msg_type == "EYE_CALIB_COMPLETE":
-                print("[Hub] ✅ 캘리브레이션 완료 확인")
                 eye_calib_completed = True  
                 await send_to_front({"type": "EYE_CALIB_END"})
     
