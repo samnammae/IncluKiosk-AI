@@ -595,7 +595,7 @@ async def handle_frontend(websocket):
             elif msg_type == "ALL_RESET":
                 print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
                 
-                global eye_calib_completed, mode_select_processing
+                global eye_calib_completed, eye_calib_processing, mode_select_processing
                 
                 # 모든 상태 플래그 리셋
                 eye_calib_completed = False
