@@ -44,7 +44,7 @@ def track_height():
 
     # 카메라 초기화
     print("[Height] 카메라 초기화 중...")
-    cap = cv2.VideoCapture(config.CAM_INDEX, cv2.CAP_V4L2)
+    cap = cv2.VideoCapture(config.CAM_INDEX)
     if not cap.isOpened():
         print(f"[Height] ❌ 카메라 열기 실패 (인덱스: {config.CAM_INDEX})")
         try:
