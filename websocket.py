@@ -455,7 +455,7 @@ async def handle_frontend(websocket):
                 await start_pir(websocket)
 
             elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
+                print("▣ ▣ ▣ PIR_DETECTED(in handle_frontend, from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
 
             elif msg_type == "PIR_OFF":
@@ -660,7 +660,7 @@ async def handle_internal_worker(websocket):
                 
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
+                print("▣ ▣ ▣ PIR_DETECTED(in handle_internal_worker, from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
                 
             # PIR 워커 정상 종료 (WebSocket 연결 끊김 감지)
