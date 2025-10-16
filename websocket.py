@@ -41,6 +41,7 @@ mode_select_processing = False  # 모드 선택 진행 중 플래그
 chat_order_processing = False  # 대화 주문 진행 중 플래그
 normal_order_processing = False # 일반 주문 진행 중 플래그
 eye_order_processing = False # 아이트래킹 주문 진행 중 플래그
+eye_ready_flag = False
 
 eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
@@ -514,39 +515,53 @@ async def handle_frontend(websocket):
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
-                # 이미 캘리브레이션이 완료되었다면 무시
+                # 이미 캘리브레이션 완료되었다면 무시
                 if eye_calib_completed:
                     print("[EYE_CALIB] ✅ 이미 캘리브레이션 완료됨 - 무시")
                     continue
-                
-                # 중복 방지
+
+                # 중복 방지: 완료 신호를 받기 전에는 재요청 무시
                 if eye_calib_processing:
                     print("[EYE_CALIB] ⚠ 이미 진행 중 - 무시")
                     continue
-                
-                eye_calib_processing = True
-        
-                try:
-                    # await stop_all_workers_safely()
-                    await stop_workers(eye=False, height=True, pir=True)
 
-                    global eye_ready_event
-                    eye_ready_event = asyncio.Event()
+                eye_calib_processing = True  # ✅ 완료 전까지 유지
+
+                # 높이/PIR만 안전 정지
+                await stop_workers(eye=False, height=True, pir=True)
+
+                global eye_ready_event, eye_ready_flag
+
+                # 워커 실행 상태 확인
+                need_wait_ready = False
+                if not eye_running():
+                    # 워커 새로 실행 → READY를 새로 기다려야 함
                     start_eye()
-                    
+                    eye_ready_flag = False              # ✅ 새 프로세스이므로 플래그 리셋
+                    need_wait_ready = True
+                else:
+                    # 이미 실행 중인데 READY를 보낸 적이 없다면 대기
+                    need_wait_ready = (not eye_ready_flag)
+
+                if need_wait_ready:
+                    eye_ready_event = asyncio.Event()
                     try:
-                        await asyncio.wait_for(eye_ready_event.wait(), timeout=30.0)
+                        # 무한 대기 원하면 ↓ 이 줄만 남기고 wait_for는 쓰지 않음
+                        await eye_ready_event.wait()
                         print("[EYE_CALIB] worker READY 확인")
                     except asyncio.TimeoutError:
+                        # (무한 대기라면 여기 안 옴. 타임아웃 버전을 쓰는 경우에만 실행)
                         print("[EYE_CALIB] ⚠ READY 타임아웃")
+                        eye_calib_processing = False    # ❗ 실패 시 진행중 플래그 해제
                         await send_to_front({"type": "ERROR", "message": "카메라 초기화 타임아웃"})
                         continue
+                else:
+                    print("[EYE_CALIB] 이미 READY 상태 - 대기 생략")
 
-                    # 캘리브레이션 명령 전송
-                    await send_to_internal_worker({"type": "EYE_CALIB_ON"})
-                    print("[EYE_CALIB] 명령 전송 완료")                    
-                finally:
-                    eye_calib_processing = False
+                # 캘리브레이션 명령 전송 (진행중 플래그는 COMPLETE에서만 내림)
+                await send_to_internal_worker({"type": "EYE_CALIB_ON"})
+                print("[EYE_CALIB] 명령 전송 완료")
+                
 
             elif msg_type == "MODE_SELECT_ON":
                 if mode_select_processing:
@@ -643,7 +658,7 @@ async def handle_frontend(websocket):
 # === 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_workers, height_proc, height_set_processing, eye_ready_event, eye_calib_completed
+    global internal_workers, height_proc, height_set_processing, eye_ready_event, eye_calib_completed, eye_calib_processing, eye_ready_flag
     internal_workers.add(websocket)
     print("[Internal Worker] 연결됨 (포트 8766)")
     
@@ -654,9 +669,17 @@ async def handle_internal_worker(websocket):
             print(f"[Worker→Hub] 수신: {msg_type}")
             
             if msg_type == "EYE_READY":
-                if eye_ready_event is not None and not eye_ready_event.is_set():
+                print("[Hub] eye worker READY")
+                eye_ready_flag = True                    # ✅ READY 플래그 ON
+                if eye_ready_event is not None:
                     eye_ready_event.set()
-                    print("[Hub] eye worker READY 설정")
+
+            elif msg_type == "EYE_CALIB_COMPLETE":
+                print("[Hub] ✅ 캘리브레이션 완료 확인")
+                eye_calib_completed = True
+                eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
+                await send_to_front({"type": "EYE_CALIB_END"})
+
                 
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
@@ -694,10 +717,6 @@ async def handle_internal_worker(websocket):
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
                 height_set_processing = False
-                
-            elif msg_type == "EYE_CALIB_COMPLETE":
-                eye_calib_completed = True  
-                await send_to_front({"type": "EYE_CALIB_END"})
     
     except websockets.exceptions.ConnectionClosed:
         print("[Internal Worker] 연결 끊김")
