@@ -23,9 +23,10 @@ stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
+
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
-EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")
-HEIGHT_WORKER = str(BASE_DIR / "height_worker.py")
+EYE_SCRIPT = str(BASE_DIR / "eye_tracking" / "worker.py")
+HEIGHT_WORKER = str(BASE_DIR / "set_height" / "worker.py")
 
 workers = {"PIR": None}
 clients = set()  # 프론트엔드 클라이언트들
