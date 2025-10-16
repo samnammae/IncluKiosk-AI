@@ -124,6 +124,18 @@ async def clear_pir_state_and_notify_frontend():
 def is_running(p):
     return (p is not None) and (p.poll() is None)
 
+def pir_running():
+    p = workers.get("PIR")
+    return (p is not None) and (p.poll() is None)
+
+def eye_running():
+    global eye_proc
+    return is_running(eye_proc)
+
+def height_running():
+    global height_proc
+    return is_running(height_proc)
+
 def stop_proc(p):
     if not is_running(p):
         return None
@@ -283,6 +295,30 @@ async def stop_all_workers_safely():
     # 4. 카메라 해제 대기
     await asyncio.sleep(1.5)
     print("[Safety] 모든 워커 정지 완료")
+    
+async def stop_workers(eye=False, height=False, pir=False):
+    """요청한 워커만 안전하게 정지"""
+    print(f"[Safety] 선택적 정지 요청: eye={eye}, height={height}, pir={pir}")
+
+    # 1) 내부 워커에게 STOP_ALL 브로드캐스트는 하지 않음
+    #    (특정 워커만 끄는 동작이므로)
+    #    필요하면 타입별 메시지 보내기
+
+    # 2) 눈 워커
+    global eye_proc
+    if eye and eye_running():
+        eye_proc = stop_proc(eye_proc)
+        await asyncio.sleep(0.5)
+
+    # 3) 높이 워커
+    if height and height_running():
+        await stop_height_worker()
+
+    # 4) PIR 워커
+    if pir and pir_running():
+        await stop_pir()
+
+    print("[Safety] 선택적 정지 완료")
 
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):
@@ -497,7 +533,8 @@ async def handle_frontend(websocket):
                 
                 try:
                     print("▣ ▣ ▣ EYE_CALIB_ON!!!(from frontend)")
-                    await stop_all_workers_safely()
+                    # await stop_all_workers_safely()
+                    await stop_workers(eye=False, height=True, pir=True)
 
                     global eye_ready_event
                     eye_ready_event = asyncio.Event()
@@ -678,6 +715,7 @@ async def handle_internal_worker(websocket):
                 
             elif msg_type == "EYE_CALIB_COMPLETE":
                 print("[Hub] ✅ 캘리브레이션 완료 확인")
+                eye_calib_completed = True  
                 await send_to_front({"type": "EYE_CALIB_END"})
     
     except websockets.exceptions.ConnectionClosed:
