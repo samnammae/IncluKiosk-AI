@@ -23,9 +23,10 @@ stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
 PYTHON = sys.executable
 BASE_DIR = Path(__file__).resolve().parent
+
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
-EYE_SCRIPT = str(BASE_DIR / "eye_tracking_worker.py")
-HEIGHT_WORKER = str(BASE_DIR / "height_worker.py")
+EYE_SCRIPT = str(BASE_DIR / "eye_tracking" / "worker.py")
+HEIGHT_WORKER = str(BASE_DIR / "set_height" / "worker.py")
 
 workers = {"PIR": None}
 clients = set()  # 프론트엔드 클라이언트들
@@ -143,10 +144,11 @@ def start_eye():
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
-        [PYTHON, EYE_SCRIPT],
+        [PYTHON, "-m", "eye_tracking.worker"],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        env=env
+        env=env,
+        cwd=str(BASE_DIR)
     )
 
 # === 높이 조절 관련 ===
@@ -173,9 +175,10 @@ async def start_height_worker():
     log_file = open("/tmp/height_worker.log", "w")
     
     height_proc = subprocess.Popen(
-        ["sudo", "-E", PYTHON, HEIGHT_WORKER],
+        ["sudo", "-E", PYTHON, "-m", "set_height.worker"],
         stdout=log_file,
-        stderr=subprocess.STDOUT
+        stderr=subprocess.STDOUT,
+        cwd=str(BASE_DIR)  # ✅ 작업 디렉토리 설정
     )
     print(f"[Height] 프로세스 PID: {height_proc.pid}")
     print(f"[Height] 로그 파일: /tmp/height_worker.log")
