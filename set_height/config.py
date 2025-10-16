@@ -41,4 +41,4 @@ PERSON_MODEL = os.path.join(
 HUB_WS_URL = "ws://127.0.0.1:8766"
 
 # ====== 디버그 설정 ======
-DEBUG = True
+DEBUG = False
