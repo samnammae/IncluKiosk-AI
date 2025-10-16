@@ -200,10 +200,6 @@ class EyeTrackingWorker:
             self._draw_status(frame)
             
             cv2.imshow("Eye Tracking", frame)
-            
-            # 키보드 입력 처리
-            if not self._handle_keyboard_input():
-                break
         
         # Cleanup
         self.cleanup()
@@ -364,119 +360,6 @@ class EyeTrackingWorker:
             color = (0, 255, 0) if "OK" in text or "OFF" in text else (0, 0, 255)
             cv2.putText(frame, text, (10, 30 + i*25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    
-    def _handle_keyboard_input(self):
-        """키보드 입력 처리
-        
-        Returns:
-            True: 계속 실행
-            False: 종료
-        """
-        # 강제 마우스 ON 신호
-        if self.ws_handler.force_mouse_on and not self.mouse_controller.enabled:
-            self.mouse_controller.set_enabled(True)
-            print("[Mouse] ON (via WS MOUSE_ON)")
-        
-        # 토글 신호 (WS)
-        if self.ws_handler.toggle_mouse_requested:
-            self.mouse_controller.set_enabled(not self.mouse_controller.enabled)
-            dbg(f"[Mouse] {'ON' if self.mouse_controller.enabled else 'OFF'} via WS toggle")
-            print(f"[Mouse] {'ON' if self.mouse_controller.enabled else 'OFF'} (via WS toggle)")
-            self.ws_handler.toggle_mouse_requested = False
-            time.sleep(0.1)
-        
-        # 키보드 F7 토글 (fallback)
-        try:
-            if keyboard.is_pressed('f7'):
-                self.mouse_controller.set_enabled(not self.mouse_controller.enabled)
-                dbg(f"[Mouse] {'ON' if self.mouse_controller.enabled else 'OFF'} via keyboard F7")
-                print(f"[Mouse] {'ON' if self.mouse_controller.enabled else 'OFF'} (via keyboard)")
-                time.sleep(0.3)
-        except Exception as e:
-            dbg(f"[Keyboard] keyboard.is_pressed error: {e}")
-        
-        # OpenCV 키 입력
-        key = cv2.waitKey(1) & 0xFF
-        
-        # 'c' 키 또는 캘리브레이션 요청 + 얼굴 메시 있음
-        c_pressed = (key == ord('c')) or \
-                    (self.ws_handler.eye_calib_requested and (self.last_head_center is not None))
-        
-        # 'f' 키: Full calibration (c + s 통합)
-        f_pressed = (key == ord('f'))
-        
-        if key == ord('q'):
-            dbg("[Key] q → quit")
-            return False
-        
-        elif f_pressed and not self.calib_state.is_calibrated():
-            # ✅ 통합 캘리브레이션 (화면 중앙을 보고 있을 때 사용)
-            if self.last_head_center is None:
-                dbg("[Calib] ✗ No face mesh data")
-                print("[Calib] ✗ No face mesh data - wait for face detection")
-            else:
-                print("[Calib] 🎯 화면 중앙을 보세요...")
-                
-                perform_full_calibration(
-                    self.calib_state,
-                    self.last_head_center,
-                    self.last_R_final,
-                    self.last_nose_points_3d,
-                    self.last_iris_3d_left,
-                    self.last_iris_3d_right,
-                    self.last_face_landmarks,  # ✅ 저장된 face_landmarks 사용
-                    self.w, self.h
-                )
-                
-                dbg("[Calib] ✓ Full calibration complete")
-                print("[Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
-                
-                asyncio.run(self.ws_handler.send_calib_complete())
-                
-                if self.ws_handler.eye_calib_requested:
-                    self.ws_handler.eye_calib_requested = False
-        
-        elif c_pressed and not self.calib_state.is_calibrated():
-            # 기존 'c' 키: 눈 위치만 캘리브레이션
-            if self.last_head_center is None:
-                dbg("[Calib] ✗ No face mesh data")
-                print("[Calib] ✗ No face mesh data - wait for face detection")
-            else:
-                perform_eye_calibration(
-                    self.calib_state,
-                    self.last_head_center,
-                    self.last_R_final,
-                    self.last_nose_points_3d,
-                    self.last_iris_3d_left,
-                    self.last_iris_3d_right,
-                    self.last_face_landmarks,  # ✅ 저장된 face_landmarks 사용
-                    self.w, self.h
-                )
-                
-                dbg("[Calib] ✓ Complete (left/right locked)")
-                print("[Calibration] ✓ Complete (눈 위치만)")
-                
-                asyncio.run(self.ws_handler.send_calib_complete())
-                
-                if self.ws_handler.eye_calib_requested:
-                    self.ws_handler.eye_calib_requested = False
-        
-        elif key == ord('s') and self.calib_state.is_calibrated():
-            # 화면 중앙 보정 (눈 위치 캘리브레이션 후에만 사용 가능)
-            if self.last_head_center is None:
-                print("[Screen Calib] ✗ No face")
-            else:
-                offset_yaw, offset_pitch = perform_screen_calibration(
-                    self.calib_state,
-                    self.last_head_center,
-                    self.last_R_final,
-                    self.last_nose_points_3d,
-                    self.last_iris_3d_left,
-                    self.last_iris_3d_right
-                )
-                print(f"[Screen Calibrated] ✓ Yaw: {offset_yaw:.2f}, Pitch: {offset_pitch:.2f}")
-        
-        return True
     
     def cleanup(self):
         """리소스 정리"""

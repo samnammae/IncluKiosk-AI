@@ -141,16 +141,14 @@ def start_eye():
     global eye_proc
     if is_running(eye_proc):
         return
-    # 로그 파일로 출력 (디버깅 편의)
-    log_file = open("/tmp/eye_worker.log", "w")
     env = os.environ.copy()
     # X 세션 접근 보장 (pi 사용자 기준)
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
         [PYTHON, "-m", "eye_tracking.worker"],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
+        stdout=None,
+        stderr=None,
         env=env,
         cwd=str(BASE_DIR)
     )
