@@ -14,7 +14,7 @@ from . import config
 from .utils import setup_logging, dbg, print_boot_info, print_system_info
 from .detection import init_mediapipe, mediapipe_face_detect, expand_and_clip_bbox, to_global_landmarks, is_fist
 from .gaze_tracking import compute_coordinate_box, convert_gaze_to_screen_coordinates
-from .calibration import CalibrationState, perform_eye_calibration, perform_screen_calibration, compute_gaze_vectors
+from .calibration import CalibrationState, perform_eye_calibration, perform_screen_calibration, compute_gaze_vectors, perform_full_calibration
 from .click_controller import ClickController, draw_click_feedback
 from .mouse_control import MouseController, write_screen_position
 from .websocket_handler import WebSocketHandler
@@ -58,6 +58,7 @@ class EyeTrackingWorker:
         self.last_nose_points_3d = None
         self.last_iris_3d_left = None
         self.last_iris_3d_right = None
+        self.last_face_landmarks = None  # ✅ face_landmarks 저장용
         
         # Hand state
         self.hand_last_state = False
@@ -255,6 +256,7 @@ class EyeTrackingWorker:
         self.last_nose_points_3d = nose_points_3d.copy()
         self.last_iris_3d_left = iris_3d_left.copy()
         self.last_iris_3d_right = iris_3d_right.copy()
+        self.last_face_landmarks = face_landmarks  # ✅ 저장
         
         # EYE_READY 전송
         if not self.ws_handler.sent_ready:
@@ -262,16 +264,18 @@ class EyeTrackingWorker:
         
         # 캘리브레이션 자동 실행
         if self.ws_handler.eye_calib_requested and not self.calib_state.is_calibrated():
-            dbg("[Calib] Auto-triggering calibration (face mesh ready)")
-            print("[Calib] 🎯 얼굴 감지됨 → 자동 캘리브레이션 시작")
+            dbg("[Calib] Auto-triggering FULL calibration (face mesh ready)")
+            print("[Calib] 🎯 얼굴 감지됨 → 자동 통합 캘리브레이션 시작")
+            print("[Calib] 💡 화면 중앙을 보세요...")
             
-            perform_eye_calibration(
+            # ✅ 통합 캘리브레이션 (c + s 한 번에)
+            perform_full_calibration(
                 self.calib_state, head_center, R_final, nose_points_3d,
                 iris_3d_left, iris_3d_right, face_landmarks, self.w, self.h
             )
             
-            dbg("[Calib] ✓ Complete (left/right locked)")
-            print("[Calibration] ✓ Complete")
+            dbg("[Calib] ✓ Full calibration complete (eye position + screen center)")
+            print("[Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
             
             asyncio.run(self.ws_handler.send_calib_complete())
             self.ws_handler.eye_calib_requested = False
@@ -397,11 +401,42 @@ class EyeTrackingWorker:
         c_pressed = (key == ord('c')) or \
                     (self.ws_handler.eye_calib_requested and (self.last_head_center is not None))
         
+        # 'f' 키: Full calibration (c + s 통합)
+        f_pressed = (key == ord('f'))
+        
         if key == ord('q'):
             dbg("[Key] q → quit")
             return False
         
+        elif f_pressed and not self.calib_state.is_calibrated():
+            # ✅ 통합 캘리브레이션 (화면 중앙을 보고 있을 때 사용)
+            if self.last_head_center is None:
+                dbg("[Calib] ✗ No face mesh data")
+                print("[Calib] ✗ No face mesh data - wait for face detection")
+            else:
+                print("[Calib] 🎯 화면 중앙을 보세요...")
+                
+                perform_full_calibration(
+                    self.calib_state,
+                    self.last_head_center,
+                    self.last_R_final,
+                    self.last_nose_points_3d,
+                    self.last_iris_3d_left,
+                    self.last_iris_3d_right,
+                    self.last_face_landmarks,  # ✅ 저장된 face_landmarks 사용
+                    self.w, self.h
+                )
+                
+                dbg("[Calib] ✓ Full calibration complete")
+                print("[Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
+                
+                asyncio.run(self.ws_handler.send_calib_complete())
+                
+                if self.ws_handler.eye_calib_requested:
+                    self.ws_handler.eye_calib_requested = False
+        
         elif c_pressed and not self.calib_state.is_calibrated():
+            # 기존 'c' 키: 눈 위치만 캘리브레이션
             if self.last_head_center is None:
                 dbg("[Calib] ✗ No face mesh data")
                 print("[Calib] ✗ No face mesh data - wait for face detection")
@@ -413,12 +448,12 @@ class EyeTrackingWorker:
                     self.last_nose_points_3d,
                     self.last_iris_3d_left,
                     self.last_iris_3d_right,
-                    None,  # face_landmarks not needed here
+                    self.last_face_landmarks,  # ✅ 저장된 face_landmarks 사용
                     self.w, self.h
                 )
                 
                 dbg("[Calib] ✓ Complete (left/right locked)")
-                print("[Calibration] ✓ Complete")
+                print("[Calibration] ✓ Complete (눈 위치만)")
                 
                 asyncio.run(self.ws_handler.send_calib_complete())
                 
@@ -426,6 +461,7 @@ class EyeTrackingWorker:
                     self.ws_handler.eye_calib_requested = False
         
         elif key == ord('s') and self.calib_state.is_calibrated():
+            # 화면 중앙 보정 (눈 위치 캘리브레이션 후에만 사용 가능)
             if self.last_head_center is None:
                 print("[Screen Calib] ✗ No face")
             else:

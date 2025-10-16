@@ -96,11 +96,12 @@ class WebSocketHandler:
     def _handle_message(self, msg_type, data):
         """메시지 처리"""
         if msg_type == "EYE_CALIB_ON":
+            # ✅ 자동으로 full calibration 수행 (c + s 통합)
             self.eye_calib_requested = True
             self.fist_enabled = False
             self.force_mouse_on = False
             self._log("[WS] → eye_calib_requested=True, ALL features OFF")
-            print("[WS] EYE_CALIB_ON → 캘리브레이션 모드 (모든 기능 OFF)")
+            print("[WS] EYE_CALIB_ON → 통합 캘리브레이션 모드 (화면 중앙을 보세요)")
             
             if self.on_eye_calib_on:
                 self.on_eye_calib_on()

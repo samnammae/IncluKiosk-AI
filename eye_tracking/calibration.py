@@ -163,6 +163,43 @@ def perform_screen_calibration(calib_state, head_center, R_final, nose_points_3d
     return calib_state.offset_yaw, calib_state.offset_pitch
 
 
+def perform_full_calibration(calib_state, head_center, R_final, nose_points_3d,
+                            iris_3d_left, iris_3d_right, face_landmarks, w, h):
+    """
+    화면 중앙을 볼 때 한 번에 캘리브레이션 수행 (c + s 통합)
+    
+    사용자가 화면 중앙을 보고 있을 때 이 함수를 호출하면
+    눈 위치 고정 + 화면 중앙 보정을 한 번에 처리
+    
+    Args:
+        calib_state: CalibrationState 객체
+        head_center: 머리 중심점
+        R_final: 회전 행렬
+        nose_points_3d: 코 랜드마크 3D 점들
+        iris_3d_left: 왼쪽 홍채 3D 좌표
+        iris_3d_right: 오른쪽 홍채 3D 좌표
+        face_landmarks: 얼굴 랜드마크
+        w, h: 프레임 크기
+        
+    Returns:
+        True: 성공, False: 실패
+    """
+    # 1단계: 눈 위치 캘리브레이션 (c 키와 동일)
+    perform_eye_calibration(
+        calib_state, head_center, R_final, nose_points_3d,
+        iris_3d_left, iris_3d_right, face_landmarks, w, h
+    )
+    
+    # 2단계: 화면 중앙 보정 (s 키와 동일)
+    # 이제 is_calibrated()가 True이므로 실행 가능
+    offset_yaw, offset_pitch = perform_screen_calibration(
+        calib_state, head_center, R_final, nose_points_3d,
+        iris_3d_left, iris_3d_right
+    )
+    
+    return True
+
+
 def compute_gaze_vectors(calib_state, head_center, R_final, nose_points_3d,
                         iris_3d_left, iris_3d_right):
     """

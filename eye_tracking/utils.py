@@ -43,6 +43,11 @@ def print_system_info():
     """시스템 정보 출력"""
     print(f"[Camera] Resolution: {config.CAMERA_WIDTH}x{config.CAMERA_HEIGHT}")
     print(f"[Face Detection] Using MediaPipe (CPU-optimized)")
-    print("[Info] 'c'=calibrate, 's'=screen center, F7=mouse, 'q'=quit")
+    print("[Info] Keyboard Controls:")
+    print("  'f' = Full calibration (화면 중앙을 보고 누르세요) ⭐ 권장")
+    print("  'c' = Eye calibration only (눈 위치만)")
+    print("  's' = Screen center calibration (c 후에 사용)")
+    print("  F7  = Toggle mouse control")
+    print("  'q' = Quit")
     print(f"[Settings] FaceMesh every {config.FACEMESH_EVERY}, "
           f"Hand every {config.HAND_EVERY}, Face Det every {config.DETECT_EVERY}")
