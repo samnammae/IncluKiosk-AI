@@ -66,6 +66,10 @@ async def main():
                         if msg.get("type") == "PIR_OFF":
                             print("[PIR] PIR_OFF received → stopping worker", flush=True)
                             _running = False
+                            await ws.send(json.dumps({
+                                "type": "PIR_END",
+                                "source": "worker"
+                            }))
                     except Exception:
                         pass
 

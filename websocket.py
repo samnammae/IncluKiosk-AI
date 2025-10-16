@@ -454,27 +454,11 @@ async def handle_frontend(websocket):
             if msg_type == "PIR_ON":
                 await start_pir(websocket)
 
-            elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(in handle_frontend, from pir-worker)")
-                await send_to_front({"type": "PIR_DETECTED"})
-
             elif msg_type == "PIR_OFF":
                 print("▣ ▣ ▣ PIR_OFF!!!")
-                # 잠금화면 복귀: 모든 워커 종료
-                # 1. 내부 워커에게 종료 신호 전송
                 await send_to_internal_worker({"type": "PIR_OFF"})
-                await send_to_internal_worker({"type": "STOP_ALL"})
-                
-                # 2. eye_tracking_worker도 종료 (잠금화면으로 복귀)
-                eye_proc = stop_proc(eye_proc)
-                
-                # 3. PIR 워커 종료 대기
                 await asyncio.sleep(1.0)
                 await stop_pir(websocket)
-                
-                # 4. 프론트에게 완료 알림
-                # await send_to_front({"type": "PIR_END"})
-                print("[PIR_OFF] 모든 워커 종료 완료")
 
             # === 높이조절 ===
             elif msg_type == "HEIGHT_SET_ON":
@@ -514,7 +498,7 @@ async def handle_frontend(websocket):
                 eye_calib_processing = True
                 
                 try:
-                    print("▣ ▣ ▣ EYE_CALIB_ON!!!")
+                    print("▣ ▣ ▣ EYE_CALIB_ON!!!(from frontend)")
                     await stop_all_workers_safely()
 
                     global eye_ready_event
@@ -531,13 +515,7 @@ async def handle_frontend(websocket):
 
                     # 캘리브레이션 명령 전송
                     await send_to_internal_worker({"type": "EYE_CALIB_ON"})
-                    print("[EYE_CALIB] 명령 전송 완료")
-                    
-                    # 캘리브레이션 완료 대기 (5초)
-                    await asyncio.sleep(5.0)
-                    await send_to_front({"type": "EYE_CALIB_END", "message": "캘리브레이션 완료"})
-                    eye_calib_completed = True
-                    
+                    print("[EYE_CALIB] 명령 전송 완료")                    
                 finally:
                     eye_calib_processing = False
 
@@ -662,6 +640,11 @@ async def handle_internal_worker(websocket):
             elif msg_type == "PIR_DETECTED":
                 print("▣ ▣ ▣ PIR_DETECTED(in handle_internal_worker, from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
+                
+            # PIR 종료 감지
+            elif msg_type == "PIR_END":
+                print("▣ ▣ ▣ PIR_END(in handle_internal_worker, from pir-worker)")
+                await send_to_front({"type": "PIR_END"})
                 
             # PIR 워커 정상 종료 (WebSocket 연결 끊김 감지)
             elif msg_type == "PIR_WORKER_EXIT":
