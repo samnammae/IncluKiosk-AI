@@ -184,7 +184,6 @@ def perform_full_calibration(calib_state, head_center, R_final, nose_points_3d,
     Returns:
         True: 성공, False: 실패
     """
-    print("[Calibration.py] in perform_full_calibration")
     # 1단계: 눈 위치 캘리브레이션 (c 키와 동일)
     perform_eye_calibration(
         calib_state, head_center, R_final, nose_points_3d,

@@ -233,7 +233,6 @@ class EyeTrackingWorker:
         self.hand_last_state = curr_fist
     
     def _process_face_mesh(self, results, roi, frame, now):
-        print("[eye_tracking/worker.py] in _process_face_mesh")
         """얼굴 메시 처리"""
         raw_lms = results.multi_face_landmarks[0].landmark
         face_landmarks = to_global_landmarks(raw_lms, roi, self.w, self.h)
