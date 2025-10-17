@@ -16,24 +16,9 @@ import world
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
 
-# Screen and mouse control setup (from old script)
-
 mouse_control_enabled = False       # 마우스 제어 토글 플래그(F7로 on/off). True일 때 보조 스레드가 mouse_target으로 커서를 이동
 filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최근 N개 평균)
 gaze_length = 350                   # 2D 프레임 내에서 시선 가시화(디버그) 선 길이(픽셀)
-
-# # =========================
-# # 3D 디버그(오빗 카메라) 뷰 상태값
-# # =========================
-# # yaw/pitch는 라디안, radius는 피벗(피사체)로부터의 거리
-# orbit_yaw   = -151.0          # 좌우 회전(라디안)
-# orbit_pitch = 00.0          # 상하 회전(라디안)
-# orbit_radius = 1500.0       # 카메라-피벗 거리(월드 단위)
-# orbit_fov_deg = 50.0       # 수평 FOV(도). 투영시 초점거리 계산에 사용
-
-# # 디버그 월드 고정(화면 중앙 캘리브레이션 이후 모니터 중심을 피벗으로 고정)
-# debug_world_frozen = False
-# orbit_pivot_frozen = None  # 고정할 피벗(모니터 중심)
 
 # 모니터 평면상 마커 저장용(사각형 로컬 좌표 a,b : 0..1)
 # a = 0..1 across width (p0->p1), b = 0..1 down height (p0->p3)     # a: 좌→우(p0->p1), b: 상→하(p0->p3)
@@ -72,7 +57,6 @@ R_ref_nose = [None]
 R_ref_forehead = [None]
 calibration_nose_scale = None
 
-
 # =========================
 # MediaPipe FaceMesh 초기화
 # =========================
@@ -84,7 +68,6 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
-
 
 # =========================
 # 카메라 열기
@@ -112,68 +95,6 @@ print(f"[Camera] Resolution set to: {w}x{h}")
 nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241, 
                 461, 125, 354, 218, 438, 195, 167, 393, 165, 391,
                 3, 248]
-
-# =========================
-# 화면 좌표를 파일로 기록
-# =========================
-# screen_position_file = config.SCREEN_POSITION
-# def write_screen_position(x, y):
-#     """
-#     현재 화면 좌표를 텍스트 파일 1줄로 덮어쓰기 저장.
-#     다른 프로세스가 이 파일을 폴링하여 시선 기반 입력과 연동할 수 있음.
-#     """
-#     with open(screen_position_file, 'w') as f:
-#         f.write(f"{x},{y}\n")
-
-
-# =========================
-# 오빗 카메라 키 입력 처리(j/l/i/k/[/]/r)
-# =========================
-# def update_orbit_from_keys():
-#     """
-#     키보드 입력으로 오빗 카메라 파라미터를 미세 조정.
-#     j/l: yaw, i/k: pitch, [/]: 줌, r: 리셋
-#     키가 눌리는 프레임마다 현재 상태를 프린트.
-#     """
-#     global orbit_yaw, orbit_pitch, orbit_radius
-#     yaw_step   = math.radians(1.5)
-#     pitch_step = math.radians(1.5)
-#     zoom_step  = 12.0
-
-#     changed = False
-
-#     # 회전
-#     if keyboard.is_pressed('j'):  # yaw left
-#         orbit_yaw -= yaw_step; changed = True
-#     if keyboard.is_pressed('l'):  # yaw right
-#         orbit_yaw += yaw_step; changed = True
-#     if keyboard.is_pressed('i'):  # pitch up
-#         orbit_pitch += pitch_step; changed = True
-#     if keyboard.is_pressed('k'):  # pitch down
-#         orbit_pitch -= pitch_step; changed = True
-
-#     # 확대/축소
-#     if keyboard.is_pressed('['):  # zoom out
-#         orbit_radius += zoom_step; changed = True
-#     if keyboard.is_pressed(']'):  # zoom in
-#         orbit_radius = max(80.0, orbit_radius - zoom_step); changed = True
-
-#     # 리셋 (prints every frame while held)
-#     if keyboard.is_pressed('r'):
-#         orbit_yaw = 0.0
-#         orbit_pitch = 0.0
-#         orbit_radius = 600.0
-#         changed = True
-
-#     # Clamp pitch & radius
-#     orbit_pitch = max(math.radians(-89), min(math.radians(89), orbit_pitch))
-#     orbit_radius = max(80.0, orbit_radius)
-
-#     if changed:
-#         print(f"[Orbit Debug] yaw={math.degrees(orbit_yaw):.2f}°, "
-#               f"pitch={math.degrees(orbit_pitch):.2f}°, "
-#               f"radius={orbit_radius:.2f}, "
-#               f"fov={orbit_fov_deg:.1f}°")
 
 # =========================
 # 2D 프레임에 시선(eye_center→iris) 가시화
@@ -224,13 +145,10 @@ def draw_gaze(frame, eye_center, iris_center, eye_radius, color, gaze_length):
         color,
         1
     )
-    
-    
 
 # =========================
 # 와이어프레임 큐브(머리 로컬 좌표축 시각화용)
 # =========================
-
 def draw_wireframe_cube(frame, center, R, size=80):
     # 얼굴에 네모박스 그리는 거
     """중심점(center)와 회전행렬 R이 주어졌을 때, 그 좌표축에 정렬된 큐브를 2D 프레임에 그림.
@@ -378,11 +296,9 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
 
     #yaw is now converted to -90 (looking directly left) to +90 (looking directly right), wrt camera
     #pitch is now converted to +90 (looking straight up) and -90 (looking straight down), wrt camera
-    
     raw_yaw_deg = yaw_deg
     raw_pitch_deg = pitch_deg
 
-    
     # Specify degrees at which screen border will be reached
     # 화면 경계에 해당하는 각도 범위(경험값)
     yawDegrees = 5 * 3  # x degrees left or right # 좌우 한계(도)
@@ -404,274 +320,6 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     screen_y = max(10, min(screen_y, config.MONITOR_HEIGHT - 10))
 
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
-
-# =========================
-# 3D 오빗 디버그 뷰 렌더링(별도 창)
-# =========================
-# def render_debug_view_orbit(
-#     h, w,
-#     head_center3d=None,
-#     sphere_world_l=None, scaled_radius_l=None,
-#     sphere_world_r=None, scaled_radius_r=None,
-#     iris3d_l=None, iris3d_r=None,
-#     left_locked=False, right_locked=False,
-#     landmarks3d=None,
-#     combined_dir=None,
-#     gaze_len=430,
-#     monitor_corners=None,
-#     monitor_center=None,
-#     monitor_normal=None,
-#     gaze_markers=None,
-# ):
-#     """월드 공간 요소(머리 중심/눈 구체/모니터 평면/시선 등)를 가상 카메라 시점으로 투영하여
-#     별도 창("Head/Eye Debug")에 렌더링. 오빗 키로 시점 제어.
-#     """
-#     # 안전장치: 디버그 뷰 크기 제한
-#     MAX_DEBUG_SIZE = 1920
-#     if h > MAX_DEBUG_SIZE or w > MAX_DEBUG_SIZE:
-#         # 비율 유지하며 축소
-#         scale = min(MAX_DEBUG_SIZE / h, MAX_DEBUG_SIZE / w)
-#         h = int(h * scale)
-#         w = int(w * scale)
-#         print(f"[Debug View] Resized to: {w}x{h}")
-    
-#     if head_center3d is None:
-#         return
-
-#     debug = np.zeros((h, w, 3), dtype=np.uint8)
-
-#     # --- Choose orbit pivot ---
-#     # (1) 피벗 선택: 캘리브레이션 후에는 모니터 중심을 고정 피벗으로 사용
-#     head_w = np.asarray(head_center3d, dtype=float)
-
-#     # NEW: if we've frozen the world, orbit around the frozen pivot (monitor center at calib)
-#     # frozen the world <- 이게 calibration을 했다는거임?
-#     global debug_world_frozen, orbit_pivot_frozen
-#     if debug_world_frozen and orbit_pivot_frozen is not None:
-#         pivot_w = np.asarray(orbit_pivot_frozen, dtype=float)
-#     else:
-#         if monitor_center is not None:
-#             pivot_w = (head_w + np.asarray(monitor_center, dtype=float)) * 0.5
-#         else:
-#             pivot_w = head_w
-
-#     # --- Camera pose (orbit around pivot_w) ---
-#     # (2) 카메라 포즈(피벗을 향해 orbit)
-#     f_px = math_utils._focal_px(w, orbit_fov_deg)
-#     cam_offset = math_utils._rot_y(orbit_yaw) @ (math_utils._rot_x(orbit_pitch) @ np.array([0.0, 0.0, orbit_radius]))
-#     cam_pos = pivot_w + cam_offset
-
-#     up_world = np.array([0.0, -1.0, 0.0])   # image-space up is -Y
-#     fwd = math_utils._normalize(pivot_w - cam_pos)     # look at pivot // 카메라가 바라보는 방향
-#     right = math_utils._normalize(np.cross(fwd, up_world))
-#     up = math_utils._normalize(np.cross(right, fwd))
-#     V = np.stack([right, up, fwd], axis=0)  # 월드→카메라 좌표 변환
-
-#     def project_point(P):
-#         """월드 점 P를 카메라 평면으로 투영하여 2D 픽셀 좌표 반환(None=뒤쪽)"""
-#         Pw = np.asarray(P, dtype=float)
-#         Pc = V @ (Pw - cam_pos)
-#         if Pc[2] <= 1e-3:
-#             return None
-#         x = f_px * (Pc[0] / Pc[2]) + w * 0.5
-#         y = -f_px * (Pc[1] / Pc[2]) + h * 0.5
-#         if not (np.isfinite(x) and np.isfinite(y)):
-#             return None
-#         return (int(x), int(y)), Pc[2]
-
-#     # 간단 도우미들(폴리곤/십자/화살표)
-#     # def draw_poly_3d(pts, color=(0, 200, 255), thickness=2):
-#     #     projs = [project_point(p) for p in pts]
-#     #     if any(p is None for p in projs): return
-#     #     p2 = [p[0] for p in projs]
-#     #     for a, b in zip(p2, p2[1:] + [p2[0]]):
-#     #         cv2.line(debug, a, b, color, thickness) <- 사용 안됨
-
-#     def draw_cross_3d(P, size=12, color=(255, 0, 255), thickness=2):
-#         res = project_point(P)
-#         if res is None: return
-#         (x, y), _ = res
-#         cv2.line(debug, (x - size, y), (x + size, y), color, thickness)
-#         cv2.line(debug, (x, y - size), (x, y + size), color, thickness)
-
-#     def draw_arrow_3d(P0, P1, color=(0, 200, 255), thickness=3):
-#         a = project_point(P0); b = project_point(P1)
-#         if a is None or b is None: return
-#         p0, p1 = a[0], b[0]
-#         cv2.line(debug, p0, p1, color, thickness)
-#         v = np.array([p1[0]-p0[0], p1[1]-p0[1]], dtype=float)
-#         n = np.linalg.norm(v)
-#         if n > 1e-3:
-#             v /= n
-#             l = np.array([-v[1], v[0]])
-#             ah = 10
-#             a1 = (int(p1[0] - v[0]*ah + l[0]*ah*0.6), int(p1[1] - v[1]*ah + l[1]*ah*0.6))
-#             a2 = (int(p1[0] - v[0]*ah - l[0]*ah*0.6), int(p1[1] - v[1]*ah - l[1]*ah*0.6))
-#             cv2.line(debug, p1, a1, color, thickness)
-#             cv2.line(debug, p1, a2, color, thickness)
-
-#     # 랜드마크 점들
-#     if landmarks3d is not None:
-#         for P in landmarks3d:
-#             res = project_point(P)
-#             if res is not None:
-#                 cv2.circle(debug, res[0], 0, (200, 200, 200), -1)
-
-#     # 머리 중심 시각화
-#     draw_cross_3d(head_w, size=12, color=(255, 0, 255), thickness=2)
-#     hc2d = project_point(head_w)
-#     if hc2d is not None:
-#         cv2.putText(debug, "Head Center", (hc2d[0][0] + 12, hc2d[0][1] - 12),
-#                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
-
-#     # --- Pivot visual (small cross + line to head and monitor) ---
-#     # 피벗 표시(머리/모니터 중심을 연결)
-#     draw_cross_3d(pivot_w, size=8, color=(180, 120, 255), thickness=2)
-#     if monitor_center is not None:
-#         mc2d = project_point(monitor_center)
-#         pv2d = project_point(pivot_w)
-#         if mc2d is not None and pv2d is not None and hc2d is not None:
-#             cv2.line(debug, pv2d[0], hc2d[0], (160, 100, 255), 1)
-#             cv2.line(debug, pv2d[0], mc2d[0], (160, 100, 255), 1)
-
-#     # --- Eyes + per-eye gaze (unchanged from your version) ---
-#     # 눈 구체/홍채 시각화 및 양안 결합 시선 표시
-#     left_dir = None
-#     right_dir = None
-
-#     if left_locked and sphere_world_l is not None:
-#         res = project_point(sphere_world_l)
-#         if res is not None:
-#             (cx, cy), z = res
-#             r_px = max(2, int((scaled_radius_l if scaled_radius_l else 6) * f_px / max(z, 1e-3)))
-#             cv2.circle(debug, (cx, cy), r_px, (255, 255, 25), 1)
-#             if iris3d_l is not None:
-#                 left_dir = np.asarray(iris3d_l) - np.asarray(sphere_world_l)
-#                 p1 = project_point(np.asarray(sphere_world_l) + math_utils._normalize(left_dir) * gaze_len)
-#                 if p1 is not None:
-#                     cv2.line(debug, (cx, cy), p1[0], (155, 155, 25), 1)
-#     elif iris3d_l is not None:
-#         res = project_point(iris3d_l)
-#         if res is not None:
-#             cv2.circle(debug, res[0], 2, (255, 255, 25), 1)
-
-#     if right_locked and sphere_world_r is not None:
-#         res = project_point(sphere_world_r)
-#         if res is not None:
-#             (cx, cy), z = res
-#             r_px = max(2, int((scaled_radius_r if scaled_radius_r else 6) * f_px / max(z, 1e-3)))
-#             cv2.circle(debug, (cx, cy), r_px, (25, 255, 255), 1)
-#             if iris3d_r is not None:
-#                 right_dir = np.asarray(iris3d_r) - np.asarray(sphere_world_r)
-#                 p1 = project_point(np.asarray(sphere_world_r) + math_utils._normalize(right_dir) * gaze_len)
-#                 if p1 is not None:
-#                     cv2.line(debug, (cx, cy), p1[0], (25, 155, 155), 1)
-#     elif iris3d_r is not None:
-#         res = project_point(iris3d_r)
-#         if res is not None:
-#             cv2.circle(debug, res[0], 2, (25, 255, 255), 1)
-
-#     if left_locked and right_locked and sphere_world_l is not None and sphere_world_r is not None:
-#         origin_mid = (np.asarray(sphere_world_l) + np.asarray(sphere_world_r)) / 2.0
-#         if combined_dir is None and (left_dir is not None or right_dir is not None):
-#             parts = []
-#             if left_dir is not None:  parts.append(math_utils._normalize(left_dir))
-#             if right_dir is not None: parts.append(math_utils._normalize(right_dir))
-#             if parts:
-#                 combined_dir = math_utils._normalize(np.mean(parts, axis=0))
-#         if combined_dir is not None:
-#             p0 = project_point(origin_mid)
-#             p1 = project_point(origin_mid + math_utils._normalize(combined_dir) * (gaze_len * 1.2))
-#             if p0 is not None and p1 is not None:
-#                 cv2.line(debug, p0[0], p1[0], (155, 200, 10), 2)
-
-#     # 모니터 평면/법선/대각선 시각화
-#     if monitor_corners is not None:
-#         def draw_poly(points, color, thickness):
-#             projs = [project_point(p) for p in points]
-#             if any(p is None for p in projs): return
-#             p2 = [p[0] for p in projs]
-#             for a, b in zip(p2, p2[1:] + [p2[0]]):
-#                 cv2.line(debug, a, b, color, thickness)
-#         draw_poly(monitor_corners, (0, 200, 255), 2)
-#         draw_poly([monitor_corners[0], monitor_corners[2]], (0, 150, 210), 1)
-#         draw_poly([monitor_corners[1], monitor_corners[3]], (0, 150, 210), 1)
-#         if monitor_center is not None:
-#             draw_cross_3d(monitor_center, size=8, color=(0, 200, 255), thickness=2)
-#             if monitor_normal is not None:
-#                 tip = np.asarray(monitor_center) + np.asarray(monitor_normal) * (20.0 * (units_per_cm or 1.0))
-#                 draw_arrow_3d(monitor_center, tip, color=(0, 220, 255), thickness=2)
-
-#     # --- Stored gaze markers on the monitor plane (green circles) ---
-#     # 저장된 (a,b) 마커를 모니터 평면에 표시(투영)
-#     if (gaze_markers and monitor_corners is not None):
-#         p0, p1, p2, p3 = [np.asarray(p, dtype=float) for p in monitor_corners]
-#         u = p1 - p0  # width direction // 가로
-#         v = p3 - p0  # height direction // 세로
-#         width_world = float(np.linalg.norm(u))
-#         if width_world > 1e-9:
-#             u_hat = u / width_world
-#             r_world = 0.01 * width_world  # 2% of width // 원 반지름(모니터 폭의 1%)
-#             for (a, b) in gaze_markers:
-#                 Pm = p0 + a * u + b * v
-#                 projP = project_point(Pm)
-#                 projR = project_point(Pm + u_hat * r_world)
-#                 if projP is not None and projR is not None:
-#                     center_px = projP[0]
-#                     r_px = int(max(1, np.linalg.norm(np.array(projR[0]) - np.array(center_px))))
-#                     cv2.circle(debug, center_px, r_px, (0, 255, 0), 1, lineType=cv2.LINE_AA)
-
-
-
-#     # --- Gaze hit on monitor plane (circle at intersection) ---
-#     # 결합 시선과 모니터 평면의 교차점 강조(원)
-#     if (monitor_corners is not None and monitor_center is not None and monitor_normal is not None
-#         and combined_dir is not None
-#         and sphere_world_l is not None and sphere_world_r is not None):
-
-#         # Ray: origin at midpoint between eyes; direction = combined gaze
-#         O = (np.asarray(sphere_world_l, dtype=float) + np.asarray(sphere_world_r, dtype=float)) * 0.5
-#         D = math_utils._normalize(np.asarray(combined_dir, dtype=float))
-
-#         # Plane: through monitor_center with normal = monitor_normal
-#         C = np.asarray(monitor_center, dtype=float)
-#         N = math_utils._normalize(np.asarray(monitor_normal, dtype=float))
-
-#         denom = float(np.dot(N, D))
-#         if abs(denom) > 1e-6:
-#             t = float(np.dot(N, (C - O)) / denom)
-#             if t > 0.0:
-#                 P = O + t * D  # world-space intersection point
-
-#                 # Inside-quad test using monitor's local axes (top-left p0, top-right p1, bottom-left p3)
-#                 p0, p1, p2, p3 = [np.asarray(p, dtype=float) for p in monitor_corners]
-#                 u = p1 - p0             # horizontal (width) vector
-#                 v = p3 - p0             # vertical (height) vector
-#                 wv = P  - p0
-
-#                 u_len2 = float(np.dot(u, u))
-#                 v_len2 = float(np.dot(v, v))
-#                 if u_len2 > 1e-9 and v_len2 > 1e-9:
-#                     a = float(np.dot(wv, u) / u_len2)  # 0..1 across width
-#                     b = float(np.dot(wv, v) / v_len2)  # 0..1 across height
-
-#                     if 0.0 <= a <= 1.0 and 0.0 <= b <= 1.0:
-#                         # Project center to pixels
-#                         projP = project_point(P)
-#                         if projP is not None:
-#                             center_px = projP[0]
-
-#                             # Circle radius = 5% of monitor width (world), projected to pixels
-#                             width_world = math.sqrt(u_len2)
-#                             r_world = 0.05 * width_world
-#                             u_hat = u / max(width_world, 1e-9)
-
-#                             projR = project_point(P + u_hat * r_world)
-#                             if projR is not None:
-#                                 r_px = int(max(1, np.linalg.norm(np.array(projR[0]) - np.array(center_px))))
-#                                 cv2.circle(debug, center_px, r_px, (0, 255, 255), 2, lineType=cv2.LINE_AA)
-
-#     cv2.imshow("Head/Eye Debug", debug)
 
 # =========================
 # 마우스 이동 보조 스레드(토글 시 mouse_target으로 이동)
@@ -818,9 +466,6 @@ while cap.isOpened():
                     mouse_target[0] = screen_x
                     mouse_target[1] = screen_y
 
-            # 좌표 파일에 마우스 위치 입력 (screen_position.txt)
-            # write_screen_position(screen_x, screen_y)
-
             # Draw combined gaze ray for visualization
             # (디버그) 결합 시선 벡터 선분 그리기
             combined_origin = (sphere_world_l + sphere_world_r) / 2
@@ -856,36 +501,12 @@ while cap.isOpened():
             x, y = int(lm.x * w), int(lm.y * h)
             cv2.circle(frame, (x, y), 0, (255, 255, 255), -1)
 
-        # 오빗 카메라 입력 업데이트
-        # update_orbit_from_keys()
-
         # Build 3D landmarks in your existing scale (x*w, y*h, z*w)
         # 3D 디버그 뷰에 사용할 전체 랜드마크(월드 스케일) 구성
         landmarks3d = None
         if results.multi_face_landmarks:
             lm = results.multi_face_landmarks[0].landmark
             landmarks3d = np.array([[p.x * w, p.y * h, p.z * w] for p in lm], dtype=float)
-
-        # # 디버그 뷰 렌더링(별도 창)
-        # render_debug_view_orbit(
-        #     h, w,
-        #     head_center3d=head_center if 'head_center' in locals() else None,
-        #     sphere_world_l=sphere_world_l if left_sphere_locked and 'sphere_world_l' in locals() else None,
-        #     scaled_radius_l=scaled_radius_l if left_sphere_locked and 'scaled_radius_l' in locals() else None,
-        #     sphere_world_r=sphere_world_r if right_sphere_locked and 'sphere_world_r' in locals() else None,
-        #     scaled_radius_r=scaled_radius_r if right_sphere_locked and 'scaled_radius_r' in locals() else None,
-        #     iris3d_l=iris_3d_left if 'iris_3d_left' in locals() else None,
-        #     iris3d_r=iris_3d_right if 'iris_3d_right' in locals() else None,
-        #     left_locked=left_sphere_locked,
-        #     right_locked=right_sphere_locked,
-        #     landmarks3d=landmarks3d,
-        #     combined_dir=avg_combined_direction if 'avg_combined_direction' in locals() else None,
-        #     gaze_len=5230, # 디버그 시선 길이(과장(?))
-        #     monitor_corners=monitor_corners,
-        #     monitor_center=monitor_center_w,
-        #     monitor_normal=monitor_normal_w,
-        #     gaze_markers=gaze_markers
-        # )
 
     # 메인 2D 뷰 갱신
     cv2.imshow("Integrated Eye Tracking", frame)
@@ -1041,7 +662,5 @@ while cap.isOpened():
         else:
             print("[Marker] Monitor/gaze not ready; complete center calibration first.")
 
-
 cap.release()
-
 cv2.destroyAllWindows()
