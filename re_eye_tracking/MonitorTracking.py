@@ -67,16 +67,7 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-# 안전장치: 최대값 제한
-MAX_DIMENSION = 4096  # 안전한 최대값
-if w > MAX_DIMENSION or h > MAX_DIMENSION or w <= 0 or h <= 0:
-    print(f"[WARNING] Invalid camera resolution: {w}x{h}, using defaults")
-    w, h = 640, 480
-
-print(f"[Camera] Resolution set to: {w}x{h}")
-
-print(f"[Size] {config.MONITOR_WIDTH} x {config.MONITOR_HEIGHT}")
+print("[Camera] Open!")
 
 # === Nose-only landmark indices (for stable up/down eye sphere tracking) ===
 # These landmarks are near the nose and are less affected by lateral head movement
