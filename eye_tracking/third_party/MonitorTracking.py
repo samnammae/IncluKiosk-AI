@@ -10,6 +10,35 @@ import pyautogui
 import threading
 import keyboard
 
+# === 안전한 좌표 검증 상수와 함수 (import 다음, 전역 변수 앞에 추가) ===
+MAX_COORD = 30000
+
+def safe_int_coord(x, y):
+    """좌표를 정수로 변환하고 범위 검증"""
+    ix, iy = int(x), int(y)
+    if abs(ix) >= MAX_COORD or abs(iy) >= MAX_COORD:
+        return None
+    return (ix, iy)
+
+def safe_line(frame, pt1, pt2, color, thickness):
+    """안전한 line 그리기"""
+    try:
+        c1 = safe_int_coord(pt1[0], pt1[1])
+        c2 = safe_int_coord(pt2[0], pt2[1])
+        if c1 is not None and c2 is not None:
+            cv2.line(frame, c1, c2, color, thickness)
+    except:
+        pass
+
+def safe_circle(frame, center, radius, color, thickness):
+    """안전한 circle 그리기"""
+    try:
+        c = safe_int_coord(center[0], center[1])
+        if c is not None and radius > 0:
+            cv2.circle(frame, c, int(radius), color, thickness)
+    except:
+        pass
+
 # Screen and mouse control setup (from old script)
 MONITOR_WIDTH, MONITOR_HEIGHT = pyautogui.size()
 CENTER_X = MONITOR_WIDTH // 2
@@ -244,48 +273,77 @@ def compute_scale(points_3d):
             count += 1
     return total / count if count > 0 else 1.0
 
+# def draw_gaze(frame, eye_center, iris_center, eye_radius, color, gaze_length):
+#     # Gaze vector
+#     gaze_direction = iris_center - eye_center
+#     gaze_direction /= np.linalg.norm(gaze_direction)
+#     gaze_endpoint = eye_center + gaze_direction * gaze_length
+
+#     cv2.line(frame, tuple(int(v) for v in eye_center[:2]), tuple(int(v) for v in gaze_endpoint[:2]), color, 2)
+
+#     # Segment points
+#     iris_offset = eye_center + gaze_direction * (1.2 * eye_radius)
+
+#     # ---- PART 1: back segment (behind iris) ----
+#     cv2.line(
+#         frame,
+#         (int(eye_center[0]), int(eye_center[1])),
+#         (int(iris_offset[0]), int(iris_offset[1])),
+#         color,
+#         1
+#     )
+
+#     # ---- IRIS (occludes part of the ray) ----
+#     up_dir = np.array([0, -1, 0])
+#     right_dir = np.cross(gaze_direction, up_dir)
+#     if np.linalg.norm(right_dir) < 1e-6:
+#         right_dir = np.array([1, 0, 0])
+#     up_dir = np.cross(right_dir, gaze_direction)
+#     up_dir /= np.linalg.norm(up_dir)
+#     right_dir /= np.linalg.norm(right_dir)
+#     ellipse_axes = (
+#         int((eye_radius / 3) * np.linalg.norm(right_dir[:2])),
+#         int((eye_radius / 3) * np.linalg.norm(up_dir[:2]))
+#     )
+#     angle = math.degrees(math.atan2(gaze_direction[1], gaze_direction[0]))
+
+#     # ---- PART 2: front segment (on top of iris) ----
+#     cv2.line(
+#         frame,
+#         (int(iris_offset[0]), int(iris_offset[1])),
+#         (int(gaze_endpoint[0]), int(gaze_endpoint[1])),
+#         color,
+#         1
+#     )
+
 def draw_gaze(frame, eye_center, iris_center, eye_radius, color, gaze_length):
     # Gaze vector
     gaze_direction = iris_center - eye_center
-    gaze_direction /= np.linalg.norm(gaze_direction)
+    norm = np.linalg.norm(gaze_direction)
+    if norm < 1e-9:
+        return  # 방향 벡터가 너무 작으면 그리지 않음
+    gaze_direction /= norm
+    
     gaze_endpoint = eye_center + gaze_direction * gaze_length
-
-    cv2.line(frame, tuple(int(v) for v in eye_center[:2]), tuple(int(v) for v in gaze_endpoint[:2]), color, 2)
-
-    # Segment points
     iris_offset = eye_center + gaze_direction * (1.2 * eye_radius)
 
-    # ---- PART 1: back segment (behind iris) ----
-    cv2.line(
-        frame,
-        (int(eye_center[0]), int(eye_center[1])),
-        (int(iris_offset[0]), int(iris_offset[1])),
-        color,
-        1
-    )
+    # Main gaze line (안전하게 그리기)
+    safe_line(frame, 
+              (eye_center[0], eye_center[1]), 
+              (gaze_endpoint[0], gaze_endpoint[1]), 
+              color, 2)
 
-    # ---- IRIS (occludes part of the ray) ----
-    up_dir = np.array([0, -1, 0])
-    right_dir = np.cross(gaze_direction, up_dir)
-    if np.linalg.norm(right_dir) < 1e-6:
-        right_dir = np.array([1, 0, 0])
-    up_dir = np.cross(right_dir, gaze_direction)
-    up_dir /= np.linalg.norm(up_dir)
-    right_dir /= np.linalg.norm(right_dir)
-    ellipse_axes = (
-        int((eye_radius / 3) * np.linalg.norm(right_dir[:2])),
-        int((eye_radius / 3) * np.linalg.norm(up_dir[:2]))
-    )
-    angle = math.degrees(math.atan2(gaze_direction[1], gaze_direction[0]))
+    # ---- PART 1: back segment (behind iris) ----
+    safe_line(frame,
+              (eye_center[0], eye_center[1]),
+              (iris_offset[0], iris_offset[1]),
+              color, 1)
 
     # ---- PART 2: front segment (on top of iris) ----
-    cv2.line(
-        frame,
-        (int(iris_offset[0]), int(iris_offset[1])),
-        (int(gaze_endpoint[0]), int(gaze_endpoint[1])),
-        color,
-        1
-    )
+    safe_line(frame,
+              (iris_offset[0], iris_offset[1]),
+              (gaze_endpoint[0], gaze_endpoint[1]),
+              color, 1)
 
 def draw_wireframe_cube(frame, center, R, size=80):
     # Given a center and rotation matrix, draw a cube aligned to that orientation
@@ -784,7 +842,8 @@ while cap.isOpened():
         y_iris_l = int(left_iris.y * h)
         # === LEFT EYE visualization ===
         if not left_sphere_locked:
-            cv2.circle(frame, (x_iris_l, y_iris_l), 10, (255, 25, 25), 2)
+            safe_circle(frame, (x_iris_l, y_iris_l), 10, (255, 25, 25), 2)
+            # cv2.circle(frame, (x_iris_l, y_iris_l), 10, (255, 25, 25), 2)
         else:
             current_nose_scale = compute_scale(nose_points_3d)
             scale_ratio = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
@@ -792,13 +851,15 @@ while cap.isOpened():
             sphere_world_l = head_center + R_final @ scaled_offset
             x_sphere_l, y_sphere_l = int(sphere_world_l[0]), int(sphere_world_l[1])
             scaled_radius_l = int(base_radius * scale_ratio)
-            cv2.circle(frame, (x_sphere_l, y_sphere_l), scaled_radius_l, (255, 255, 25), 2)
+            safe_circle(frame, (x_sphere_l, y_sphere_l), scaled_radius_l, (255, 255, 25), 2)
+            # cv2.circle(frame, (x_sphere_l, y_sphere_l), scaled_radius_l, (255, 255, 25), 2)
 
         x_iris_r = int(right_iris.x * w)
         y_iris_r = int(right_iris.y * h)
         # === RIGHT EYE visualization ===
         if not right_sphere_locked:
-            cv2.circle(frame, (x_iris_r, y_iris_r), 10, (25, 255, 25), 2)
+            safe_circle(frame, (x_iris_r, y_iris_r), 10, (25, 255, 25), 2)
+            # cv2.circle(frame, (x_iris_r, y_iris_r), 10, (25, 255, 25), 2)
         else:
             current_nose_scale = compute_scale(nose_points_3d)
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
@@ -806,7 +867,8 @@ while cap.isOpened():
             sphere_world_r = head_center + R_final @ scaled_offset_r
             x_sphere_r, y_sphere_r = int(sphere_world_r[0]), int(sphere_world_r[1])
             scaled_radius_r = int(base_radius * scale_ratio_r)
-            cv2.circle(frame, (x_sphere_r, y_sphere_r), scaled_radius_r, (25, 255, 255), 2)
+            # cv2.circle(frame, (x_sphere_r, y_sphere_r), scaled_radius_r, (25, 255, 255), 2)
+            safe_circle(frame, (x_sphere_r, y_sphere_r), scaled_radius_r, (25, 255, 255), 2)
 
         iris_3d_left = np.array([left_iris.x * w, left_iris.y * h, left_iris.z * w])
         iris_3d_right = np.array([right_iris.x * w, right_iris.y * h, right_iris.z * w])
@@ -856,12 +918,16 @@ while cap.isOpened():
             # Draw combined gaze ray for visualization
             combined_origin = (sphere_world_l + sphere_world_r) / 2
             combined_target = combined_origin + avg_combined_direction * gaze_length
-            cv2.line(
-                frame,
-                (int(combined_origin[0]), int(combined_origin[1])),
-                (int(combined_target[0]), int(combined_target[1])),
-                (255, 255, 10), 3
-            )
+            safe_line(frame,
+                (combined_origin[0], combined_origin[1]),
+                (combined_target[0], combined_target[1]),
+                (255, 255, 10), 3)
+            # cv2.line(
+            #     frame,
+            #     (int(combined_origin[0]), int(combined_origin[1])),
+            #     (int(combined_target[0]), int(combined_target[1])),
+            #     (255, 255, 10), 3
+            # )
 
             # Center multiple lines of text
             texts = [
@@ -885,7 +951,8 @@ while cap.isOpened():
         # Draw all landmark points in white
         for idx, lm in enumerate(face_landmarks):
             x, y = int(lm.x * w), int(lm.y * h)
-            cv2.circle(frame, (x, y), 0, (255, 255, 255), -1)
+            # cv2.circle(frame, (x, y), 0, (255, 255, 255), -1)
+            safe_circle(frame, (x, y), 1, (255, 255, 255), -1) 
 
         # Smooth orbit controls each frame
         update_orbit_from_keys()
