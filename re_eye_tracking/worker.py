@@ -8,16 +8,88 @@ from collections import deque
 import pyautogui
 import threading
 import keyboard
+import queue  
+import asyncio  
+import websockets 
+import json   
 
 import config
 import utils
 from click_controller import ClickController 
+
+# ============ WebSocket 통신 관련 추가 ============
+HUB_URI = "ws://localhost:8766"
+hub_ws = None
+message_queue = queue.Queue()  # Hub → Worker 메시지 큐
+send_queue = queue.Queue()     # Worker → Hub 메시지 큐
+
+# 상태 플래그 (메시지 수신용)
+calib_requested = False
+screen_calib_requested = False
+mouse_only_requested = False
+mouse_click_requested = False
+stop_requested = False
 
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
 
 mouse_control_enabled = False       # 마우스 제어 토글 플래그(F7로 on/off). True일 때 보조 스레드가 mouse_target으로 커서를 이동
 filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최근 N개 평균)
+
+# ============ WebSocket 클라이언트 (별도 스레드) ============
+def websocket_thread_func():
+    """WebSocket 통신을 담당하는 스레드 (asyncio 이벤트 루프 실행)"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(websocket_client())
+
+async def websocket_client():
+    """Hub와 WebSocket 연결 및 메시지 송수신"""
+    global hub_ws
+    
+    try:
+        async with websockets.connect(HUB_URI) as ws:
+            hub_ws = ws
+            print("🟠 [Eye Worker] Hub에 연결됨 (8766)")
+            
+            # 연결 직후 READY 신호 전송
+            await ws.send(json.dumps({"type": "EYE_READY"}))
+            
+            # 송신 태스크 시작
+            send_task = asyncio.create_task(send_messages(ws))
+            
+            # 수신 루프
+            async for raw in ws:
+                try:
+                    data = json.loads(raw)
+                    msg_type = data.get("type")
+                    print(f"🟠 [Eye Worker] Hub로부터 수신: {msg_type}")
+                    message_queue.put(data)
+                except Exception as e:
+                    print(f"🟠 [Eye Worker] 메시지 처리 오류: {e}")
+            
+            send_task.cancel()
+            
+    except Exception as e:
+        print(f"🟠 [Eye Worker] WebSocket 오류: {e}")
+    finally:
+        hub_ws = None
+
+async def send_messages(ws):
+    """send_queue에 있는 메시지를 Hub로 전송"""
+    while True:
+        try:
+            # 0.1초마다 큐 확인
+            await asyncio.sleep(0.1)
+            
+            while not send_queue.empty():
+                msg = send_queue.get_nowait()
+                await ws.send(json.dumps(msg))
+                print(f"🟠 [Eye Worker] Hub로 전송: {msg.get('type')}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"🟠 [Eye Worker] 전송 오류: {e}")
 
 # =========================
 # 3D 모니터 평면 상태(월드 좌표계)
@@ -68,7 +140,6 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-print("[Camera] Open!")
 
 # === Nose-only landmark indices (for stable up/down eye sphere tracking) ===
 # These landmarks are near the nose and are less affected by lateral head movement
@@ -222,6 +293,13 @@ def mouse_mover():
 # 데몬 스레드 시작
 threading.Thread(target=mouse_mover, daemon=True).start()
 
+# ============ WebSocket 스레드 시작 (추가) ============
+threading.Thread(target=websocket_thread_func, daemon=True).start()
+print("🟠 [Eye Worker] WebSocket 스레드 시작")
+
+# 잠시 대기 (WebSocket 연결 완료 대기)
+time.sleep(1.0)
+
 # ============ 클릭 컨트롤러 초기화 (추가) ============
 click_controller = ClickController(
     prepare_time=0.4,    # 0.4초 후 준비 단계 시작
@@ -230,7 +308,6 @@ click_controller = ClickController(
     radius=50,           # 50픽셀 반경 허용
     cooldown=0.5         # 클릭 후 0.5초 대기
 )
-print("[Click Controller] Initialized")
 
 # Eye sphere tracking variables (from new script)
 # =========================
@@ -257,6 +334,27 @@ while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
+    
+    # ============ Hub 메시지 처리 ============
+    try:
+        while not message_queue.empty():
+            msg = message_queue.get_nowait()
+            msg_type = msg.get("type")
+            
+            if msg_type == "EYE_CALIB_ON":
+                print("🟠 [Eye Worker] got EYE_CALIB_ON")
+                calib_requested = True
+            elif msg_type == "MOUSE_ON":
+                print("🟠 [Eye Worker] got MOUSE_ON")
+                mouse_only_requested = True
+            elif msg_type == "EYE_ORDER_ON":
+                print("🟠 [Eye Worker] got EYE_ORDER_ON")
+                mouse_click_requested = True
+            elif msg_type == "STOP_ALL":
+                print("🟠 [Eye Worker] got STOP_ALL")
+                stop_requested = True
+    except queue.Empty:
+        pass
 
     combined_dir = None  # will be filled once you compute a smoothed direction // 현재 프레임의 결합 시선(평활화 후)
 
@@ -363,9 +461,9 @@ while cap.isOpened():
             if click_state['should_click']:
                 try:
                     pyautogui.click(screen_x, screen_y)
-                    print(f"[Click] ✓ at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
+                    print(f"🟠 [Eye Worker] [Click] ✓ at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
                 except Exception as e:
-                    print(f"[Click] Error: {e}")
+                    print(f"🟠 [Eye Worker] [Click] Error: {e}")
 
             # 마우스 이동 목표 업데이트(스레드가 이동 수행)
             if mouse_control_enabled:
@@ -383,21 +481,38 @@ while cap.isOpened():
     cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
 
     # -------------------------
-    # 키보드 입력 처리(전역)
+    # 메시지 처리 (전역)
     # -------------------------
-    # F7: 마우스 제어 토글(디바운싱)
-    if keyboard.is_pressed('f7'):
-        mouse_control_enabled = not mouse_control_enabled
-        click_controller.set_enabled(mouse_control_enabled)
-        print(f"[Mouse Control] {'Enabled' if mouse_control_enabled else 'Disabled'}")
-        print(f"[Click Controller] {'Enabled' if mouse_control_enabled else 'Disabled'}") 
-        time.sleep(0.3)  # debounce to prevent rapid toggling
-
+    
+    # 종료 요청
+    if stop_requested:
+        print("🟠 [Eye Worker] 종료 요청 수신")
+        break
+    
+    # 마우스 제어만 활성화 (MOUSE_ON)
+    if mouse_only_requested:
+        mouse_only_requested = False
+        mouse_control_enabled = True
+        click_controller.set_enabled(False)
+        print(f"🟠 [Eye Worker] 마우스 제어만 활성화 (클릭 OFF)")
+    
+    # 마우스 + 클릭 활성화 (EYE_ORDER_ON)
+    if mouse_click_requested:
+        mouse_click_requested = False
+        mouse_control_enabled = True
+        click_controller.set_enabled(True)
+        print(f"🟠 [Eye Worker] 마우스 제어 + 클릭 활성화")
+    
+    # cv2.waitKey는 유지 (더미 윈도우용)
     key = cv2.waitKey(1) & 0xFF
     
-    if key == ord('q'):
+    if key == ord('q'):  # 수동 종료용으로 남겨둠
         break
-    elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
+    
+    # ============ EYE_CALIB_ON 처리 (기존 'c' 키 로직) ============
+    if calib_requested and not (left_sphere_locked and right_sphere_locked):
+        calib_requested = False
+        
         # 1) 현 프레임의 코 영역 스케일 측정
         current_nose_scale = utils.compute_scale(nose_points_3d)
         
@@ -449,14 +564,12 @@ while cap.isOpened():
         #global debug_world_frozen, orbit_pivot_frozen
         debug_world_frozen = True
         orbit_pivot_frozen = monitor_center_w.copy()
-        print("[Debug View] World pivot frozen at monitor center.")
-        print(f"[Monitor] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")
-        print("[Both Spheres Locked] Eye sphere calibration complete.")
+        print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
+        print("🟠 [Eye Worker] 캘리브레이션 완료")
         
-    elif key == ord('s') and left_sphere_locked and right_sphere_locked:
-        # 화면 중앙 캘리브레이션: 현재 시선을 (0,0) 기준으로 간주하여 오프셋 저장
-        # Screen calibration - user should look at center of screen when pressing 's'
-        # Get current gaze direction
+        # ============ 자동으로 's' 키 로직 실행 ============
+        
+        # 현재 시선 방향 계산
         left_gaze_dir = iris_3d_left - sphere_world_l
         left_gaze_dir /= np.linalg.norm(left_gaze_dir)
         right_gaze_dir = iris_3d_right - sphere_world_r
@@ -464,16 +577,116 @@ while cap.isOpened():
         current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
         current_combined_direction /= np.linalg.norm(current_combined_direction)
         
-        # Calculate what the raw angles would be without calibration
+        # 보정값 계산
         _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
-            current_combined_direction, 0, 0  # no calibration offset
+            current_combined_direction, 0, 0
         )
         
-        # Set calibration offsets to center the gaze
         calibration_offset_yaw = 0 - raw_yaw
         calibration_offset_pitch = 0 - raw_pitch
         
-        print(f"[Screen Calibrated] Offset Yaw: {calibration_offset_yaw:.2f}, Offset Pitch: {calibration_offset_pitch:.2f}")
+        print(f"🟠 [Eye Worker] 화면 보정 완료: Yaw={calibration_offset_yaw:.2f}°, Pitch={calibration_offset_pitch:.2f}°")
+        
+        # ============ Hub에 완료 신호 전송 ============
+        send_queue.put({"type": "EYE_CALIB_COMPLETE"})    
+    
+    # # -------------------------
+    # # 키보드 입력 처리(전역)
+    # # -------------------------
+    # # F7: 마우스 제어 토글(디바운싱)
+    # if keyboard.is_pressed('f7'):
+    #     mouse_control_enabled = not mouse_control_enabled
+    #     click_controller.set_enabled(mouse_control_enabled)
+    #     print(f"[Mouse Control] {'Enabled' if mouse_control_enabled else 'Disabled'}")
+    #     print(f"[Click Controller] {'Enabled' if mouse_control_enabled else 'Disabled'}") 
+    #     time.sleep(0.3)  # debounce to prevent rapid toggling
+
+    # key = cv2.waitKey(1) & 0xFF
+    
+    # if key == ord('q'):
+    #     break
+    # elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
+    #     # 1) 현 프레임의 코 영역 스케일 측정
+    #     current_nose_scale = utils.compute_scale(nose_points_3d)
+        
+    #     # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
+    #     left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
+    #     camera_dir_world = np.array([0, 0, 1])                      # 카메라 z+ 방향(프레임 전방)
+    #     camera_dir_local = R_final.T @ camera_dir_world             # 머리 로컬로 변환
+    #     left_sphere_local_offset += base_radius * camera_dir_local
+    #     left_calibration_nose_scale = current_nose_scale
+    #     left_sphere_locked = True # Lock LEFT eye
+
+    #     # 3) (우안) 동일 로직
+    #     right_sphere_local_offset = R_final.T @ (iris_3d_right - head_center)
+    #     right_sphere_local_offset += base_radius * camera_dir_local  # use same camera_dir_local
+    #     right_calibration_nose_scale = current_nose_scale
+    #     right_sphere_locked = True # Lock RIGHT eye
+
+    #     # 4) 캘리브레이션 시점의 월드 좌표 구체 중심(스케일 1 가정)
+    #     # === Create 3D monitor plane at calibration ===
+    #     # Compute instantaneous sphere positions at calibration distance (scale=1)
+    #     sphere_world_l_calib = head_center + R_final @ left_sphere_local_offset
+    #     sphere_world_r_calib = head_center + R_final @ right_sphere_local_offset
+
+    #     # 5) 양안 시선 평균으로 정면 힌트(forward_hint) 계산
+    #     # Estimate a forward gaze direction from the two eyes
+    #     left_dir  = iris_3d_left  - sphere_world_l_calib
+    #     right_dir = iris_3d_right - sphere_world_r_calib
+    #     # Normalize (guard zero)
+    #     if np.linalg.norm(left_dir)  > 1e-9: left_dir  /= np.linalg.norm(left_dir)
+    #     if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
+    #     forward_hint = (left_dir + right_dir) * 0.5
+    #     if np.linalg.norm(forward_hint) > 1e-9:
+    #         forward_hint /= np.linalg.norm(forward_hint)
+    #     else:
+    #         forward_hint = None  # fallback to head frame
+
+    #     gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
+    #     gaze_dir = forward_hint  # already normalized
+        
+    #     # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
+    #     monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
+    #         head_center, R_final, face_landmarks, w, h,
+    #         forward_hint=forward_hint,
+    #         gaze_origin=gaze_origin,
+    #         gaze_dir=gaze_dir
+    #     )
+
+    #     # Freeze the debug world's orbit pivot at the calibrated monitor center
+    #     #global debug_world_frozen, orbit_pivot_frozen
+    #     debug_world_frozen = True
+    #     orbit_pivot_frozen = monitor_center_w.copy()
+    #     print("[Debug View] World pivot frozen at monitor center.")
+    #     print(f"[Monitor] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")
+    #     print("[Both Spheres Locked] Eye sphere calibration complete.")
+        
+    # elif key == ord('s') and left_sphere_locked and right_sphere_locked:
+    #     # 화면 중앙 캘리브레이션: 현재 시선을 (0,0) 기준으로 간주하여 오프셋 저장
+    #     # Screen calibration - user should look at center of screen when pressing 's'
+    #     # Get current gaze direction
+    #     left_gaze_dir = iris_3d_left - sphere_world_l
+    #     left_gaze_dir /= np.linalg.norm(left_gaze_dir)
+    #     right_gaze_dir = iris_3d_right - sphere_world_r
+    #     right_gaze_dir /= np.linalg.norm(right_gaze_dir)
+    #     current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
+    #     current_combined_direction /= np.linalg.norm(current_combined_direction)
+        
+    #     # Calculate what the raw angles would be without calibration
+    #     _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
+    #         current_combined_direction, 0, 0  # no calibration offset
+    #     )
+        
+    #     # Set calibration offsets to center the gaze
+    #     calibration_offset_yaw = 0 - raw_yaw
+    #     calibration_offset_pitch = 0 - raw_pitch
+        
+    #     print(f"[Screen Calibrated] Offset Yaw: {calibration_offset_yaw:.2f}, Offset Pitch: {calibration_offset_pitch:.2f}")
 
 cap.release()
 cv2.destroyAllWindows()
+
+# ============ 종료 신호 전송 (추가) ============
+if hub_ws:
+    send_queue.put({"type": "WORKER_EXIT"})
+    time.sleep(0.5)
