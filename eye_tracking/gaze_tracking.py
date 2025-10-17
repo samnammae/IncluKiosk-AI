@@ -156,18 +156,21 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction,
         yz_proj /= yz_norm
         pitch_rad = math.acos(np.clip(np.dot(reference_forward, yz_proj), -1.0, 1.0))
         if avg_direction[1] > 0:
-            pitch_rad = -pitch_rad
+            pitch_rad = +pitch_rad # ← 시험 1
+        # 또는
+        # if avg_direction[1] < 0:
+        #     pitch_rad = -pitch_rad  # ← 시험 2
     
     yaw_deg = math.degrees(yaw_rad)
     pitch_deg = math.degrees(pitch_rad)
     
     print(f"🟣[GazeTracking] [DEBUG] Before flip - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
     
-    # ❌ 기존의 잘못된 좌우 반전 제거
-    if yaw_deg < 0:
-        yaw_deg = -yaw_deg
-    elif yaw_deg > 0:
-        yaw_deg = -yaw_deg
+    # # ❌ 기존의 잘못된 좌우 반전 제거
+    # if yaw_deg < 0:
+    #     yaw_deg = -yaw_deg
+    # elif yaw_deg > 0:
+    #     yaw_deg = -yaw_deg
     
     # ✅ 올바른 좌우 반전 (필요한 경우만)
     # yaw_deg = -yaw_deg  # 한 번만 반전
@@ -193,7 +196,7 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction,
     print(f"🟣[GazeTracking] [DEBUG] Before flip - screen_x: {screen_x}, screen_y: {screen_y}")
     
     # 좌우반전 (필요한 경우)
-    screen_x = config.MONITOR_WIDTH_PX - screen_x
+    # screen_x = config.MONITOR_WIDTH_PX - screen_x
     
     # 클리핑
     screen_x = max(10, min(screen_x, config.MONITOR_WIDTH_PX - 10))
