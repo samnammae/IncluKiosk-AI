@@ -17,7 +17,6 @@ pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나
 
 mouse_control_enabled = False       # 마우스 제어 토글 플래그(F7로 on/off). True일 때 보조 스레드가 mouse_target으로 커서를 이동
 filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최근 N개 평균)
-# gaze_length = 350                   # 2D 프레임 내에서 시선 가시화(디버그) 선 길이(픽셀)
 
 # =========================
 # 3D 모니터 평면 상태(월드 좌표계)
@@ -35,10 +34,6 @@ mouse_lock = threading.Lock()
 # 화면 매핑 보정값(캘리브레이션 시 's'로 중앙 정렬하기 위해 yaw/pitch 오프셋 저장)
 calibration_offset_yaw = 0
 calibration_offset_pitch = 0
-
-# 간단한 화면 가장자리 캘리브레이션 단계(현재 코드에서는 미사용 플래그)
-# 0=중앙 대기, 1=좌측 가장자리 대기, 2=완료
-# calib_step = 0
 
 # Buffers to store recent gaze data for smoothing
 # 최근 결합 시선(combined gaze) 방향 벡터 버퍼(평활화용)
@@ -92,89 +87,6 @@ nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241,
                 3, 248]
 
 # =========================
-# 2D 프레임에 시선(eye_center→iris) 가시화
-# =========================
-# def draw_gaze(frame, eye_center, iris_center, eye_radius, color, gaze_length):
-#     """지정한 눈 중심에서 홍채 방향으로 gaze_length만큼 선을 그려 시각화.
-#     프레임 좌표계에서 선분을 두 부분(홍채 뒤/앞)으로 나눠 간접적인 깊이 느낌 제공.
-#     """
-#     # 단위 시선 벡터 // Gaze vector
-#     gaze_direction = iris_center - eye_center
-#     gaze_direction /= np.linalg.norm(gaze_direction)
-#     gaze_endpoint = eye_center + gaze_direction * gaze_length
-
-#     # 전체 시선 벡터(얇은 선)
-#     cv2.line(frame, tuple(int(v) for v in eye_center[:2]), tuple(int(v) for v in gaze_endpoint[:2]), color, 2)
-
-#     # 홍채 중심쪽으로 약간 앞/뒤 분할 지점 // Segment points
-#     iris_offset = eye_center + gaze_direction * (1.2 * eye_radius)
-
-#     # ---- PART 1: back segment (behind iris) ---- (뒤쪽) 분할선
-#     cv2.line(
-#         frame,
-#         (int(eye_center[0]), int(eye_center[1])),
-#         (int(iris_offset[0]), int(iris_offset[1])),
-#         color,
-#         1
-#     )
-
-#     # ---- IRIS (occludes part of the ray) ---- 
-#     up_dir = np.array([0, -1, 0])
-#     right_dir = np.cross(gaze_direction, up_dir)
-#     if np.linalg.norm(right_dir) < 1e-6:
-#         right_dir = np.array([1, 0, 0])
-#     up_dir = np.cross(right_dir, gaze_direction)
-#     up_dir /= np.linalg.norm(up_dir)
-#     right_dir /= np.linalg.norm(right_dir)
-#     ellipse_axes = (
-#         int((eye_radius / 3) * np.linalg.norm(right_dir[:2])),
-#         int((eye_radius / 3) * np.linalg.norm(up_dir[:2]))
-#     )
-#     angle = math.degrees(math.atan2(gaze_direction[1], gaze_direction[0]))
-
-#     # ---- PART 2: front segment (on top of iris) ---- (앞쪽) 분할선
-#     cv2.line(
-#         frame,
-#         (int(iris_offset[0]), int(iris_offset[1])),
-#         (int(gaze_endpoint[0]), int(gaze_endpoint[1])),
-#         color,
-#         1
-#     )
-
-# =========================
-# 와이어프레임 큐브(머리 로컬 좌표축 시각화용)
-# =========================
-# def draw_wireframe_cube(frame, center, R, size=80):
-#     # 얼굴에 네모박스 그리는 거
-#     """중심점(center)와 회전행렬 R이 주어졌을 때, 그 좌표축에 정렬된 큐브를 2D 프레임에 그림.
-#     X=R[:,0], Y=-R[:,1], Z=-R[:,2] 방향으로 면 확장.
-#     """
-#     right = R[:, 0]
-#     up = -R[:, 1]
-#     forward = -R[:, 2]
-
-#     hw, hh, hd = size * 1, size * 1, size * 1
-
-#     def corner(x_sign, y_sign, z_sign):
-#         return (center +
-#                 x_sign * hw * right +
-#                 y_sign * hh * up +
-#                 z_sign * hd * forward)
-
-#     # 8개 큐브의 코너
-#     corners = [corner(x, y, z) for x in [-1, 1] for y in [1, -1] for z in [-1, 1]]
-#     projected = [(int(pt[0]), int(pt[1])) for pt in corners]
-
-#     # 간선으로 코너 연결
-#     edges = [
-#         (0, 1), (1, 3), (3, 2), (2, 0),
-#         (4, 5), (5, 7), (7, 6), (6, 4),
-#         (0, 4), (1, 5), (2, 6), (3, 7)
-#     ]
-#     for i, j in edges:
-#         cv2.line(frame, projected[i], projected[j], (255, 128, 0), 2)
-
-# =========================
 # 코 주변 소영역의 PCA 좌표계 계산 및 그리기
 # =========================
 def compute_and_draw_coordinate_box(frame, face_landmarks, indices, ref_matrix_container, color=(0, 255, 0), size=80):
@@ -192,11 +104,6 @@ def compute_and_draw_coordinate_box(frame, face_landmarks, indices, ref_matrix_c
 
     # Compute the average position as the center of this substructure
     center = np.mean(points_3d, axis=0) # 중심(평균)
-
-    # # 선택 점들을 2D 프레임에 표시(디버그)
-    # for i in indices:
-    #     x, y = int(face_landmarks[i].x * w), int(face_landmarks[i].y * h)
-    #     cv2.circle(frame, (x, y), 3, color, -1)
 
     # PCA-based orientation: Compute eigenvectors of the covariance matrix
     # 공분산 → 고유분해(내림차순 정렬)
@@ -227,18 +134,6 @@ def compute_and_draw_coordinate_box(frame, face_landmarks, indices, ref_matrix_c
         for i in range(3):
             if np.dot(R_final[:, i], R_ref[:, i]) < 0:
                 R_final[:, i] *= -1
-
-    # Draw cube and orientation axes on the image
-    # draw_wireframe_cube(frame, center, R_final, size)
-
-    # # # 큐브 및 XYZ축(초록=X, 파랑=Y, 빨강=Z) 시각화
-    # axis_length = size * 1.2
-    # axis_dirs = [R_final[:, 0], -R_final[:, 1], -R_final[:, 2]]
-    # axis_colors = [(0, 255, 0), (0, 0, 255), (255, 0, 0)]
-
-    # for i in range(3):
-    #     end_pt = center + axis_dirs[i] * axis_length
-    #     cv2.line(frame, (int(center[0]), int(center[1])), (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
 
     return center, R_final, points_3d
 
@@ -394,7 +289,6 @@ while cap.isOpened():
         y_iris_l = int(left_iris.y * h)
         # === LEFT EYE visualization ===
         if not left_sphere_locked:
-            # cv2.circle(frame, (x_iris_l, y_iris_l), 10, (255, 25, 25), 2)
             pass
         else:
             current_nose_scale = utils.compute_scale(nose_points_3d)
@@ -403,14 +297,12 @@ while cap.isOpened():
             sphere_world_l = head_center + R_final @ scaled_offset
             x_sphere_l, y_sphere_l = int(sphere_world_l[0]), int(sphere_world_l[1])
             scaled_radius_l = int(base_radius * scale_ratio)
-            # cv2.circle(frame, (x_sphere_l, y_sphere_l), scaled_radius_l, (255, 255, 25), 2)
 
         # (우안)
         x_iris_r = int(right_iris.x * w)
         y_iris_r = int(right_iris.y * h)
         # === RIGHT EYE visualization ===
         if not right_sphere_locked:
-            # cv2.circle(frame, (x_iris_r, y_iris_r), 10, (25, 255, 25), 2)
             pass
         else:
             current_nose_scale = utils.compute_scale(nose_points_3d)
@@ -419,7 +311,6 @@ while cap.isOpened():
             sphere_world_r = head_center + R_final @ scaled_offset_r
             x_sphere_r, y_sphere_r = int(sphere_world_r[0]), int(sphere_world_r[1])
             scaled_radius_r = int(base_radius * scale_ratio_r)
-            # cv2.circle(frame, (x_sphere_r, y_sphere_r), scaled_radius_r, (25, 255, 255), 2)
 
         # 홍채의 3D 위치(픽셀 스케일)
         iris_3d_left = np.array([left_iris.x * w, left_iris.y * h, left_iris.z * w])
@@ -427,11 +318,6 @@ while cap.isOpened():
 
         # 양안 구체가 잠겼다면 시선 계산/시각화 및 화면 좌표 변환 수행
         if left_sphere_locked and right_sphere_locked:
-            # ==== DRAW LEFT AND RIGHT GAZE ====
-            # # (디버그) 프레임 위 시선 선 그리기
-            # draw_gaze(frame, sphere_world_l, iris_3d_left, scaled_radius_l, (55, 255, 0), 130)   
-            # draw_gaze(frame, sphere_world_r, iris_3d_right, scaled_radius_r, (55, 255, 0), 130)  
-
             # ==== COMPUTE COMBINED GAZE DIRECTION FOR SCREEN MAPPING ====
             # Calculate individual gaze directions
             # (1) 개별 시선 벡터 → (2) 평균 → (3) 정규화
@@ -469,41 +355,6 @@ while cap.isOpened():
                     mouse_target[0] = screen_x
                     mouse_target[1] = screen_y
 
-            # Draw combined gaze ray for visualization
-            # (디버그) 결합 시선 벡터 선분 그리기
-            # combined_origin = (sphere_world_l + sphere_world_r) / 2
-            # combined_target = combined_origin + avg_combined_direction * gaze_length
-            # cv2.line(
-            #     frame,
-            #     (int(combined_origin[0]), int(combined_origin[1])),
-            #     (int(combined_target[0]), int(combined_target[1])),
-            #     (255, 255, 10), 3
-            # )
-
-            # 상단 중앙에 텍스트 표시(화면 좌표)
-            # texts = [
-            #     f"Screen: ({screen_x}, {screen_y})",
-            #     #f"Mouse: {'ON' if mouse_control_enabled else 'OFF'}"
-            # ]
-            # font = cv2.FONT_HERSHEY_SIMPLEX
-            # font_scale = 0.7
-            # thickness = 2
-            # line_spacing = 30
-
-            # for i, text in enumerate(texts):
-            #     (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-            #     center_x = (w - text_width) // 2
-            #     #center_y = (h // 2) + (i - len(texts)//2) * line_spacing
-                
-            #     color = (0, 255, 0) if "Mouse: ON" not in text else (0, 255, 0) if mouse_control_enabled else (0, 0, 255)
-            #     cv2.putText(frame, text, (center_x, 30), font, font_scale, color, thickness)
-
-        
-        # 모든 랜드마크를 흰 점으로 표현(밀집 표시)
-        # for idx, lm in enumerate(face_landmarks):
-        #     x, y = int(lm.x * w), int(lm.y * h)
-        #     cv2.circle(frame, (x, y), 0, (255, 255, 255), -1)
-
         # Build 3D landmarks in your existing scale (x*w, y*h, z*w)
         # 3D 디버그 뷰에 사용할 전체 랜드마크(월드 스케일) 구성
         landmarks3d = None
@@ -511,8 +362,6 @@ while cap.isOpened():
             lm = results.multi_face_landmarks[0].landmark
             landmarks3d = np.array([[p.x * w, p.y * h, p.z * w] for p in lm], dtype=float)
 
-    # 메인 2D 뷰 갱신
-    # cv2.imshow("Integrated Eye Tracking", frame)
     cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
 
     # -------------------------
