@@ -23,7 +23,8 @@ filter_length = 10
 gaze_length = 350
 
 # --- Orbit camera state for the debug view ---
-orbit_yaw   = -151.0          # radians, left/right
+# orbit_yaw   = -151.0          # radians, left/right
+orbit_yaw   = -2.6          # radians, left/right
 orbit_pitch = 00.0          # radians, up/down
 orbit_radius = 1500.0       # distance from head center
 orbit_fov_deg = 50.0       # horizontal FOV for projection
@@ -477,6 +478,12 @@ def render_debug_view_orbit(
         y = -f_px * (Pc[1] / Pc[2]) + h * 0.5
         if not (np.isfinite(x) and np.isfinite(y)):
             return None
+        
+        # 좌표가 합리적인 범위 내에 있는지 확인
+        max_coord = 30000  # SHRT_MAX보다 작은 안전한 값
+        if abs(x) > max_coord or abs(y) > max_coord:
+            return None
+        
         return (int(x), int(y)), Pc[2]
 
     # --- helper draws ---
@@ -883,7 +890,8 @@ while cap.isOpened():
             right_locked=right_sphere_locked,
             landmarks3d=landmarks3d,
             combined_dir=avg_combined_direction if 'avg_combined_direction' in locals() else None,
-            gaze_len=5230,
+            # gaze_len=5230,
+            gaze_len=430,
             monitor_corners=monitor_corners,
             monitor_center=monitor_center_w,
             monitor_normal=monitor_normal_w,
