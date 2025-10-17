@@ -196,7 +196,7 @@ class EyeTrackingWorker:
             # UI 표시
             self._draw_status(frame)
             
-            cv2.imshow("Eye Tracking", frame)
+            # cv2.imshow("Eye Tracking", frame)
             cv2.waitKey(1)
         
         # Cleanup
