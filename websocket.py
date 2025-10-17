@@ -722,7 +722,6 @@ async def handle_internal_worker(websocket):
                 eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
                 await send_to_front({"type": "EYE_CALIB_END"})
 
-                
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
                 await send_to_front({"type": "PIR_DETECTED"})
