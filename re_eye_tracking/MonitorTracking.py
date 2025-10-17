@@ -866,26 +866,26 @@ while cap.isOpened():
             lm = results.multi_face_landmarks[0].landmark
             landmarks3d = np.array([[p.x * w, p.y * h, p.z * w] for p in lm], dtype=float)
 
-        # 디버그 뷰 렌더링(별도 창)
-        render_debug_view_orbit(
-            h, w,
-            head_center3d=head_center if 'head_center' in locals() else None,
-            sphere_world_l=sphere_world_l if left_sphere_locked and 'sphere_world_l' in locals() else None,
-            scaled_radius_l=scaled_radius_l if left_sphere_locked and 'scaled_radius_l' in locals() else None,
-            sphere_world_r=sphere_world_r if right_sphere_locked and 'sphere_world_r' in locals() else None,
-            scaled_radius_r=scaled_radius_r if right_sphere_locked and 'scaled_radius_r' in locals() else None,
-            iris3d_l=iris_3d_left if 'iris_3d_left' in locals() else None,
-            iris3d_r=iris_3d_right if 'iris_3d_right' in locals() else None,
-            left_locked=left_sphere_locked,
-            right_locked=right_sphere_locked,
-            landmarks3d=landmarks3d,
-            combined_dir=avg_combined_direction if 'avg_combined_direction' in locals() else None,
-            gaze_len=5230, # 디버그 시선 길이(과장(?))
-            monitor_corners=monitor_corners,
-            monitor_center=monitor_center_w,
-            monitor_normal=monitor_normal_w,
-            gaze_markers=gaze_markers
-        )
+        # # 디버그 뷰 렌더링(별도 창)
+        # render_debug_view_orbit(
+        #     h, w,
+        #     head_center3d=head_center if 'head_center' in locals() else None,
+        #     sphere_world_l=sphere_world_l if left_sphere_locked and 'sphere_world_l' in locals() else None,
+        #     scaled_radius_l=scaled_radius_l if left_sphere_locked and 'scaled_radius_l' in locals() else None,
+        #     sphere_world_r=sphere_world_r if right_sphere_locked and 'sphere_world_r' in locals() else None,
+        #     scaled_radius_r=scaled_radius_r if right_sphere_locked and 'scaled_radius_r' in locals() else None,
+        #     iris3d_l=iris_3d_left if 'iris_3d_left' in locals() else None,
+        #     iris3d_r=iris_3d_right if 'iris_3d_right' in locals() else None,
+        #     left_locked=left_sphere_locked,
+        #     right_locked=right_sphere_locked,
+        #     landmarks3d=landmarks3d,
+        #     combined_dir=avg_combined_direction if 'avg_combined_direction' in locals() else None,
+        #     gaze_len=5230, # 디버그 시선 길이(과장(?))
+        #     monitor_corners=monitor_corners,
+        #     monitor_center=monitor_center_w,
+        #     monitor_normal=monitor_normal_w,
+        #     gaze_markers=gaze_markers
+        # )
 
     # 메인 2D 뷰 갱신
     cv2.imshow("Integrated Eye Tracking", frame)
