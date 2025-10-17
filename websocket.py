@@ -68,6 +68,21 @@ async def broadcast_json(payload: dict):
             dead.append(ws)
     for ws in dead:
         clients.discard(ws)
+        
+import psutil  # 파일 상단에 추가
+
+def count_eye_worker_processes():
+    """실행중인 eye_tracking.worker 프로세스 개수 확인"""
+    count = 0
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info.get('cmdline', [])
+            if cmdline and 'eye_tracking.worker' in ' '.join(cmdline):
+                count += 1
+                print(f"[DEBUG] 발견된 프로세스: PID={proc.info['pid']}, CMD={' '.join(cmdline)}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return count
 
 # === 라즈베리파이 내부 워커에게 메시지 전송 === #
 async def send_to_internal_worker(payload: dict):
@@ -152,6 +167,13 @@ def stop_proc(p):
 
 def start_eye():
     global eye_proc
+    # 시스템 전체 프로세스 개수 확인
+    total_count = count_eye_worker_processes()
+    print(f"[DEBUG] 🔍 시스템에서 실행중인 eye_tracking.worker 프로세스: {total_count}개")
+    
+    print(f"[DEBUG] start_eye() 호출됨")
+    print(f"[DEBUG] 현재 eye_proc 상태: {eye_proc}")
+    print(f"[DEBUG] eye_proc 실행중? {is_running(eye_proc)}")
     if is_running(eye_proc):
         return
     env = os.environ.copy()
@@ -165,6 +187,7 @@ def start_eye():
         env=env,
         cwd=str(BASE_DIR)
     )
+    print(f"[DEBUG] ✅ 새로운 eye_proc 생성됨 (PID: {eye_proc.pid})")
 
 # === 높이 조절 관련 ===
 async def start_height_worker():
@@ -536,11 +559,13 @@ async def handle_frontend(websocket):
                 need_wait_ready = False
                 if not eye_running():
                     # 워커 새로 실행 → READY를 새로 기다려야 함
+                    print("[DEBUG] 🔄 eye_running() == False → start_eye() 호출 예정")
                     start_eye()
                     eye_ready_flag = False              # ✅ 새 프로세스이므로 플래그 리셋
                     need_wait_ready = True
                 else:
                     # 이미 실행 중인데 READY를 보낸 적이 없다면 대기
+                    print(f"[DEBUG] ✓ 이미 실행중 (PID: {eye_proc.pid if eye_proc else 'None'})")
                     need_wait_ready = (not eye_ready_flag)
 
                 if need_wait_ready:
