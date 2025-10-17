@@ -7,7 +7,6 @@ from scipy.spatial.transform import Rotation as Rscipy
 from collections import deque
 import pyautogui
 import threading
-import keyboard
 import queue  
 import asyncio  
 import websockets 
