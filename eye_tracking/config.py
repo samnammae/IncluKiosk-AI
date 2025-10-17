@@ -57,7 +57,7 @@ CAMERA_BUFFER_SIZE = 1
 # Monitor Settings
 # =====================
 # 사용자와 모니터 사이 거리 (cm)
-USER_MONITOR_DISTANCE = 70.0
+USER_MONITOR_DISTANCE = 60.0
 
 # 모니터 실제 크기 (cm)
 MONITOR_WIDTH_CM = 34.42
@@ -103,7 +103,7 @@ BASE_RADIUS = 20
 
 # Gaze angle ranges (degrees)
 YAW_DEGREES = 15
-PITCH_DEGREES = 5
+PITCH_DEGREES = 30
 
 # =====================
 # MediaPipe Settings
