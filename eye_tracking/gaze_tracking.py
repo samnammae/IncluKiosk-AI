@@ -125,81 +125,138 @@ def create_monitor_plane(head_center, R_final, face_landmarks, w, h,
     return [p0, p1, p2, p3], center_w, normal_w, upc
 
 
-def convert_gaze_to_screen_coordinates(combined_gaze_direction, 
-                                       calibration_offset_yaw, 
+# def convert_gaze_to_screen_coordinates(combined_gaze_direction, 
+#                                        calibration_offset_yaw, 
+#                                        calibration_offset_pitch):
+#     """
+#     시선 벡터를 화면 좌표로 변환
+#     """
+#     # reference_forward = np.array([0, 0, -1])
+#     reference_forward = np.array([0, 0, 1])
+#     avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
+    
+#     print(f"🟣[GazeTracking] [DEBUG] avg_direction (original): {avg_direction}")
+    
+#     # Yaw 계산
+#     xz_proj = np.array([avg_direction[0], 0, avg_direction[2]])
+#     xz_norm = np.linalg.norm(xz_proj)
+#     if xz_norm < 1e-9:
+#         yaw_rad = 0.0
+#     else:
+#         xz_proj /= xz_norm
+#         yaw_rad = math.acos(np.clip(np.dot(reference_forward, xz_proj), -1.0, 1.0))
+#         if avg_direction[0] < 0:
+#             yaw_rad = -yaw_rad
+    
+#     # Pitch 계산
+#     yz_proj = np.array([0, avg_direction[1], avg_direction[2]])
+#     yz_norm = np.linalg.norm(yz_proj)
+#     if yz_norm < 1e-9:
+#         pitch_rad = 0.0
+#     else:
+#         yz_proj /= yz_norm
+#         pitch_rad = math.acos(np.clip(np.dot(reference_forward, yz_proj), -1.0, 1.0))
+#         if avg_direction[1] > 0:
+#             pitch_rad = +pitch_rad # ← 시험 1
+#         # 또는
+#         # if avg_direction[1] < 0:
+#         #     pitch_rad = -pitch_rad  # ← 시험 2
+    
+#     yaw_deg = math.degrees(yaw_rad)
+#     pitch_deg = math.degrees(pitch_rad)
+    
+#     print(f"🟣[GazeTracking] [DEBUG] Before flip - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
+    
+#     # # ❌ 기존의 잘못된 좌우 반전 제거
+#     # if yaw_deg < 0:
+#     #     yaw_deg = -yaw_deg
+#     # elif yaw_deg > 0:
+#     #     yaw_deg = -yaw_deg
+    
+#     # ✅ 올바른 좌우 반전 (필요한 경우만)
+#     # yaw_deg = -yaw_deg  # 한 번만 반전
+    
+#     raw_yaw_deg = yaw_deg
+#     raw_pitch_deg = pitch_deg
+    
+#     # 보정 적용
+#     yaw_deg += calibration_offset_yaw
+#     pitch_deg += calibration_offset_pitch
+    
+#     print(f"🟣[GazeTracking] [DEBUG] After offset - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
+#     print(f"🟣[GazeTracking] [DEBUG] offset_yaw: {calibration_offset_yaw:.2f}, offset_pitch: {calibration_offset_pitch:.2f}")
+    
+#     # 화면 좌표로 변환
+#     # ✅ 범위 제한 추가 (극단값 방지)
+#     yaw_deg = np.clip(yaw_deg, -config.YAW_DEGREES, config.YAW_DEGREES)
+#     pitch_deg = np.clip(pitch_deg, -config.PITCH_DEGREES, config.PITCH_DEGREES)
+    
+#     screen_x = int(((yaw_deg + config.YAW_DEGREES) / (2 * config.YAW_DEGREES)) * config.MONITOR_WIDTH_PX)
+#     screen_y = int(((config.PITCH_DEGREES - pitch_deg) / (2 * config.PITCH_DEGREES)) * config.MONITOR_HEIGHT_PX)
+    
+#     print(f"🟣[GazeTracking] [DEBUG] Before flip - screen_x: {screen_x}, screen_y: {screen_y}")
+    
+#     # 좌우반전 (필요한 경우)
+#     # screen_x = config.MONITOR_WIDTH_PX - screen_x
+    
+#     # 클리핑
+#     screen_x = max(10, min(screen_x, config.MONITOR_WIDTH_PX - 10))
+#     screen_y = max(10, min(screen_y, config.MONITOR_HEIGHT_PX - 10))
+    
+#     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
+
+def convert_gaze_to_screen_coordinates(combined_gaze_direction,
+                                       calibration_offset_yaw,
                                        calibration_offset_pitch):
     """
-    시선 벡터를 화면 좌표로 변환
+    시선 벡터를 화면 좌표로 변환 (atan2 기반, 일관된 부호/사분면)
+    - 전방 기준: +Z
+    - yaw  : 오른쪽 +, 왼쪽 -
+    - pitch: 아래   +, 위   -
     """
-    reference_forward = np.array([0, 0, -1])
-    avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
-    
-    print(f"🟣[GazeTracking] [DEBUG] avg_direction (original): {avg_direction}")
-    
-    # Yaw 계산
-    xz_proj = np.array([avg_direction[0], 0, avg_direction[2]])
-    xz_norm = np.linalg.norm(xz_proj)
-    if xz_norm < 1e-9:
-        yaw_rad = 0.0
-    else:
-        xz_proj /= xz_norm
-        yaw_rad = math.acos(np.clip(np.dot(reference_forward, xz_proj), -1.0, 1.0))
-        if avg_direction[0] < 0:
-            yaw_rad = -yaw_rad
-    
-    # Pitch 계산
-    yz_proj = np.array([0, avg_direction[1], avg_direction[2]])
-    yz_norm = np.linalg.norm(yz_proj)
-    if yz_norm < 1e-9:
-        pitch_rad = 0.0
-    else:
-        yz_proj /= yz_norm
-        pitch_rad = math.acos(np.clip(np.dot(reference_forward, yz_proj), -1.0, 1.0))
-        if avg_direction[1] > 0:
-            pitch_rad = +pitch_rad # ← 시험 1
-        # 또는
-        # if avg_direction[1] < 0:
-        #     pitch_rad = -pitch_rad  # ← 시험 2
-    
-    yaw_deg = math.degrees(yaw_rad)
+    # 0) 정규화
+    d = combined_gaze_direction
+    n = np.linalg.norm(d)
+    if n < 1e-9:
+        # 안전 가드: 중앙 반환
+        cx = config.MONITOR_WIDTH_PX  // 2
+        cy = config.MONITOR_HEIGHT_PX // 2
+        return cx, cy, 0.0, 0.0
+    d = d / n
+    x, y, z = float(d[0]), float(d[1]), float(d[2])
+
+    # 1) 각도 계산을 atan2로 (사분면/부호 자동 처리)
+    #   - z가 전방(+), x 오른쪽(+), y 아래(+)
+    yaw_rad   = math.atan2(x,  z)   # 좌우
+    pitch_rad = math.atan2(-y, z)   # 위로 보면 pitch 음수 → 화면 y 작아짐
+
+    yaw_deg   = math.degrees(yaw_rad)
     pitch_deg = math.degrees(pitch_rad)
-    
-    print(f"🟣[GazeTracking] [DEBUG] Before flip - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
-    
-    # # ❌ 기존의 잘못된 좌우 반전 제거
-    # if yaw_deg < 0:
-    #     yaw_deg = -yaw_deg
-    # elif yaw_deg > 0:
-    #     yaw_deg = -yaw_deg
-    
-    # ✅ 올바른 좌우 반전 (필요한 경우만)
-    # yaw_deg = -yaw_deg  # 한 번만 반전
-    
-    raw_yaw_deg = yaw_deg
+
+    # raw 저장(오프셋 적용 전 각도)
+    raw_yaw_deg   = yaw_deg
     raw_pitch_deg = pitch_deg
-    
-    # 보정 적용
-    yaw_deg += calibration_offset_yaw
+
+    # 2) 중앙 보정(offset) 적용
+    yaw_deg   += calibration_offset_yaw
     pitch_deg += calibration_offset_pitch
-    
-    print(f"🟣[GazeTracking] [DEBUG] After offset - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
-    print(f"🟣[GazeTracking] [DEBUG] offset_yaw: {calibration_offset_yaw:.2f}, offset_pitch: {calibration_offset_pitch:.2f}")
-    
-    # 화면 좌표로 변환
-    # ✅ 범위 제한 추가 (극단값 방지)
-    yaw_deg = np.clip(yaw_deg, -config.YAW_DEGREES, config.YAW_DEGREES)
-    pitch_deg = np.clip(pitch_deg, -config.PITCH_DEGREES, config.PITCH_DEGREES)
-    
-    screen_x = int(((yaw_deg + config.YAW_DEGREES) / (2 * config.YAW_DEGREES)) * config.MONITOR_WIDTH_PX)
-    screen_y = int(((config.PITCH_DEGREES - pitch_deg) / (2 * config.PITCH_DEGREES)) * config.MONITOR_HEIGHT_PX)
-    
-    print(f"🟣[GazeTracking] [DEBUG] Before flip - screen_x: {screen_x}, screen_y: {screen_y}")
-    
-    # 좌우반전 (필요한 경우)
-    # screen_x = config.MONITOR_WIDTH_PX - screen_x
-    
-    # 클리핑
-    screen_x = max(10, min(screen_x, config.MONITOR_WIDTH_PX - 10))
-    screen_y = max(10, min(screen_y, config.MONITOR_HEIGHT_PX - 10))
-    
-    return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
+
+    # 3) 각도 범위 제한(포화 방지) — 처음엔 넉넉하게
+    yaw_deg   = float(np.clip(yaw_deg,   -config.YAW_DEGREES,   config.YAW_DEGREES))
+    pitch_deg = float(np.clip(pitch_deg, -config.PITCH_DEGREES, config.PITCH_DEGREES))
+
+    # 4) 각도 → 픽셀 매핑
+    #   yaw  : [-YAW, +YAW]   → [0, W]
+    #   pitch: [-PITCH, +PIT] → [0, H] (위가 작아지도록 'PITCH - pitch' 사용)
+    W, H = config.MONITOR_WIDTH_PX, config.MONITOR_HEIGHT_PX
+    x_px = int(((yaw_deg   + config.YAW_DEGREES)   / (2 * config.YAW_DEGREES))   * W)
+    y_px = int(((config.PITCH_DEGREES - pitch_deg) / (2 * config.PITCH_DEGREES)) * H)
+
+    # 5) (필요시만) 좌우 미러 — 픽셀 단계에서 '한 번만' 적용
+    # x_px = W - x_px
+
+    # 6) 가장자리 여유 클리핑
+    x_px = max(10, min(x_px, W - 10))
+    y_px = max(10, min(y_px, H - 10))
+
+    return x_px, y_px, raw_yaw_deg, raw_pitch_deg
