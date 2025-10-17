@@ -580,14 +580,12 @@ async def handle_frontend(websocket):
                 if need_wait_ready:
                     eye_ready_event = asyncio.Event()
                     try:
-                        # 무한 대기 원하면 ↓ 이 줄만 남기고 wait_for는 쓰지 않음
-                        await eye_ready_event.wait()
+                        await asyncio.wait_for(eye_ready_event.wait(), timeout=30.0)
                         print("🔵[Hub] [EYE_CALIB] worker READY 확인")
                     except asyncio.TimeoutError:
-                        # (무한 대기라면 여기 안 옴. 타임아웃 버전을 쓰는 경우에만 실행)
-                        print("🔵[Hub] [EYE_CALIB] ⚠ READY 타임아웃")
+                        print("🔵[Hub] [EYE_CALIB] ❌ READY 타임아웃 발생 → 프론트로 오류 전송")
                         eye_calib_processing = False    # ❗ 실패 시 진행중 플래그 해제
-                        await send_to_front({"type": "ERROR", "message": "카메라 초기화 타임아웃"})
+                        await send_to_front({"type": "EYE_CALIB_ERR", "message": "카메라 초기화 타임아웃"})
                         continue
                 else:
                     print("🔵[Hub] [EYE_CALIB] 이미 READY 상태 - 대기 생략")
