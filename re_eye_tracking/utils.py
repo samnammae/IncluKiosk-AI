@@ -1,6 +1,6 @@
 import math
 import numpy as np
-import config
+from . import config
 
 # =========================
 # 소규모 수학 유틸
