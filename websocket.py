@@ -706,9 +706,6 @@ async def handle_internal_worker(websocket):
                 eye_calib_completed = True
                 eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
                 await send_to_front({"type": "EYE_CALIB_END"})
-                print("🔵[HUB] send \"EYE_CALIB_END\" to front")
-                await send_to_internal_worker({"type": "MOUSE_ON"})
-                print("🔵[HUB] send \"MOUSE_ON\" to internal worker")
 
                 
             # PIR 감지
