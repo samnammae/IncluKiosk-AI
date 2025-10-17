@@ -531,6 +531,10 @@ async def handle_frontend(websocket):
                 
                 # 🆕 모든 워커 안전하게 정지
                 # await stop_all_workers_safely()
+                try:
+                    await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+                except Exception as e:
+                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
@@ -561,6 +565,10 @@ async def handle_frontend(websocket):
                 if not eye_running():
                     # 워커 새로 실행 → READY를 새로 기다려야 함
                     print("🔵[Hub] [DEBUG] 🔄 eye_running() == False → start_eye() 호출 예정")
+                    try:
+                        await loop.run_in_executor(None, tts_stt.play_calib_guide_message)
+                    except Exception as e:
+                        print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                     start_eye()
                     eye_ready_flag = False              # ✅ 새 프로세스이므로 플래그 리셋
                     need_wait_ready = True
@@ -596,6 +604,10 @@ async def handle_frontend(websocket):
                     continue
                 
                 mode_select_processing = True
+                try:
+                    await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
+                except Exception as e:
+                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 
                 if not is_running(eye_proc):
                     print("🔵[Hub] [MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")

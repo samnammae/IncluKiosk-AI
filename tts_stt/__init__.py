@@ -5,6 +5,9 @@ from .config import (
     DEFAULT_CHAT_GUIDE,
     DEFAULT_ERROR_GUIDE,
     DEFAULT_CANCEL_GUIDE,
+    HEIGHT_GUIDE_SOUND,
+    CALIB_GUIDE_SOUND,
+    MODE_GUIDE_SOUND,
     STT_SILENCE_SEC,
     STT_MAX_DURATION,
     STT_CALIB_SEC,
@@ -31,6 +34,9 @@ from .guide_messages import (
     play_chat_guide_message,
     play_error_guide_message,
     play_cancel_guide_message,
+    play_height_guide_message,
+    play_calib_guide_message,
+    play_mode_guide_message,
 )
 
 __all__ = [
