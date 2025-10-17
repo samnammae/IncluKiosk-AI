@@ -5,6 +5,7 @@ Calibration Module
 import numpy as np
 from . import config
 from .gaze_tracking import compute_scale, create_monitor_plane
+import time
 
 
 class CalibrationState:
@@ -201,6 +202,9 @@ def perform_full_calibration(calib_state, head_center, R_final, nose_points_3d,
     # ✅ 3단계: 마우스를 화면 중앙으로 즉시 이동
     print(f"🟡[eye_worker WS] [Calibration] 마우스를 화면 중앙({config.CENTER_X}, {config.CENTER_Y})으로 이동")
     pyautogui.moveTo(config.CENTER_X, config.CENTER_Y, duration=0)  # duration=0: 즉시 이동
+    time.sleep(5)
+    print(f"🟡[eye_worker WS] [Calibration] 센터에서 5초간 머무름")
+    
     
     
     return True
