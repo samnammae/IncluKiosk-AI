@@ -509,6 +509,34 @@ while cap.isOpened():
     if key == ord('q'):  # 수동 종료용으로 남겨둠
         break
     
+    
+    # ============ 캘리브레이션 직후 다음 프레임 처리 (추가) ============
+    if calib_just_completed and left_sphere_locked and right_sphere_locked:
+        print("🟠 [Eye Worker] 화면 중앙 보정 자동 실행...")
+        
+        # 현재 시선 방향 계산
+        left_gaze_dir = iris_3d_left - sphere_world_l  # ✅ 정확히 동일!
+        left_gaze_dir /= np.linalg.norm(left_gaze_dir)
+        right_gaze_dir = iris_3d_right - sphere_world_r  # ✅ 정확히 동일!
+        right_gaze_dir /= np.linalg.norm(right_gaze_dir)
+        current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
+        current_combined_direction /= np.linalg.norm(current_combined_direction)
+        
+        # 보정값 계산
+        _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
+            current_combined_direction, 0, 0
+        )
+        
+        calibration_offset_yaw = 0 - raw_yaw
+        calibration_offset_pitch = 0 - raw_pitch
+        
+        print(f"🟠 [Eye Worker] 화면 보정 완료: Yaw={calibration_offset_yaw:.2f}°, Pitch={calibration_offset_pitch:.2f}°")
+
+        send_queue.put({"type": "EYE_CALIB_COMPLETE"})
+        # 플래그 해제
+        calib_requested = False
+        calib_just_completed = False
+    
     # ============ EYE_CALIB_ON 처리 (기존 'c' 키 로직) ============
     if calib_requested and not (left_sphere_locked and right_sphere_locked):
         calib_requested = False
@@ -568,31 +596,6 @@ while cap.isOpened():
         print("🟠 [Eye Worker] 캘리브레이션 완료")
         
         calib_just_completed = True
-
-    # ============ 캘리브레이션 직후 다음 프레임 처리 (추가) ============
-    if calib_just_completed and left_sphere_locked and right_sphere_locked:
-        print("🟠 [Eye Worker] 화면 중앙 보정 자동 실행...")
-        
-        # 현재 시선 방향 계산
-        left_gaze_dir = iris_3d_left - sphere_world_l  # ✅ 정확히 동일!
-        left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-        right_gaze_dir = iris_3d_right - sphere_world_r  # ✅ 정확히 동일!
-        right_gaze_dir /= np.linalg.norm(right_gaze_dir)
-        current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
-        current_combined_direction /= np.linalg.norm(current_combined_direction)
-        
-        # 보정값 계산
-        _, _, raw_yaw, raw_pitch = convert_gaze_to_screen_coordinates(
-            current_combined_direction, 0, 0
-        )
-        
-        calibration_offset_yaw = 0 - raw_yaw
-        calibration_offset_pitch = 0 - raw_pitch
-        
-        print(f"🟠 [Eye Worker] 화면 보정 완료: Yaw={calibration_offset_yaw:.2f}°, Pitch={calibration_offset_pitch:.2f}°")
-
-        send_queue.put({"type": "EYE_CALIB_COMPLETE"})
-        calib_just_completed = False  # ← 플래그 해제
 
     # # -------------------------
     # # 키보드 입력 처리(전역)
