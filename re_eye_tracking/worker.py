@@ -12,9 +12,9 @@ import asyncio
 import websockets 
 import json   
 
-import config
-import utils
-from click_controller import ClickController 
+from . import config
+from . import utils
+from .click_controller import ClickController
 
 # ============ WebSocket 통신 관련 추가 ============
 HUB_URI = "ws://localhost:8766"
