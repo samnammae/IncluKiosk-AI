@@ -26,7 +26,8 @@ gaze_length = 350
 # orbit_yaw   = -151.0          # radians, left/right
 orbit_yaw   = -2.6          # radians, left/right
 orbit_pitch = 00.0          # radians, up/down
-orbit_radius = 1500.0       # distance from head center
+# orbit_radius = 1500.0       # distance from head center
+orbit_radius = 600.0       # distance from head center
 orbit_fov_deg = 50.0       # horizontal FOV for projection
 
 # --- Debug-view world freeze (pivot fixed after center calibration) ---
@@ -299,7 +300,16 @@ def draw_wireframe_cube(frame, center, R, size=80):
 
     # 8 corners of the cube
     corners = [corner(x, y, z) for x in [-1, 1] for y in [1, -1] for z in [-1, 1]]
-    projected = [(int(pt[0]), int(pt[1])) for pt in corners]
+    # projected = [(int(pt[0]), int(pt[1])) for pt in corners]
+    
+    # 좌표 검증 추가
+    max_coord = 30000
+    projected = []
+    for pt in corners:
+        x, y = int(pt[0]), int(pt[1])
+        if abs(x) > max_coord or abs(y) > max_coord:
+            return  # 좌표가 범위를 벗어나면 그리기 중단
+        projected.append((x, y))
 
     # Edges connecting the corners
     edges = [
@@ -359,8 +369,14 @@ def compute_and_draw_coordinate_box(frame, face_landmarks, indices, ref_matrix_c
     axis_dirs = [R_final[:, 0], -R_final[:, 1], -R_final[:, 2]]
     axis_colors = [(0, 255, 0), (0, 0, 255), (255, 0, 0)]
 
+    max_coord = 30000
     for i in range(3):
         end_pt = center + axis_dirs[i] * axis_length
+        # 좌표 검증
+        if (abs(int(center[0])) < max_coord and abs(int(center[1])) < max_coord and
+            abs(int(end_pt[0])) < max_coord and abs(int(end_pt[1])) < max_coord):
+            cv2.line(frame, (int(center[0]), int(center[1])), 
+                    (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
         cv2.line(frame, (int(center[0]), int(center[1])), (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
 
     return center, R_final, points_3d
