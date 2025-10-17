@@ -77,8 +77,11 @@ face_mesh = mp_face_mesh.FaceMesh(
 
 # === Open webcam ===
 cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+print(f"Camera resolution: {w}x{h}")  # 디버깅용
 
 # === Nose-only landmark indices (for stable up/down eye sphere tracking) ===
 # These landmarks are near the nose and are less affected by lateral head movement
@@ -377,7 +380,7 @@ def compute_and_draw_coordinate_box(frame, face_landmarks, indices, ref_matrix_c
             abs(int(end_pt[0])) < max_coord and abs(int(end_pt[1])) < max_coord):
             cv2.line(frame, (int(center[0]), int(center[1])), 
                     (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
-        cv2.line(frame, (int(center[0]), int(center[1])), (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
+        # cv2.line(frame, (int(center[0]), int(center[1])), (int(end_pt[0]), int(end_pt[1])), axis_colors[i], 2)
 
     return center, R_final, points_3d
 
