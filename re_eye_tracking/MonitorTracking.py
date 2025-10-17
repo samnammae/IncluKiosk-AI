@@ -348,6 +348,12 @@ right_calibration_nose_scale = None
 # =========================
 # 메인 루프: 프레임 처리
 # =========================
+
+# 키보드 입력을 위한 더미 윈도우 생성 (화면에 보이지 않음)
+dummy_frame = np.zeros((1, 1, 3), dtype=np.uint8)
+cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
+cv2.moveWindow("Eye Tracking (Hidden)", -1000, -1000)  # 화면 밖으로 이동
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -507,6 +513,7 @@ while cap.isOpened():
 
     # 메인 2D 뷰 갱신
     # cv2.imshow("Integrated Eye Tracking", frame)
+    cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
 
     # -------------------------
     # 키보드 입력 처리(전역)
