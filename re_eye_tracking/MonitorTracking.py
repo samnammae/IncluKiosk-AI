@@ -20,10 +20,6 @@ mouse_control_enabled = False       # 마우스 제어 토글 플래그(F7로 on
 filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최근 N개 평균)
 gaze_length = 350                   # 2D 프레임 내에서 시선 가시화(디버그) 선 길이(픽셀)
 
-# 모니터 평면상 마커 저장용(사각형 로컬 좌표 a,b : 0..1)
-# a = 0..1 across width (p0->p1), b = 0..1 down height (p0->p3)     # a: 좌→우(p0->p1), b: 상→하(p0->p3)
-# gaze_markers = []
-
 # =========================
 # 3D 모니터 평면 상태(월드 좌표계)
 # =========================
@@ -603,64 +599,6 @@ while cap.isOpened():
         calibration_offset_pitch = 0 - raw_pitch
         
         print(f"[Screen Calibrated] Offset Yaw: {calibration_offset_yaw:.2f}, Offset Pitch: {calibration_offset_pitch:.2f}")
-    # elif key == ord('x'):
-    #     # 현재 결합 시선과 모니터 평면의 교차 지점을 (a,b)로 변환하여 마커 저장
-    #     # Drop a marker at the current gaze∩monitor point
-    #     if (monitor_corners is not None and monitor_center_w is not None and monitor_normal_w is not None
-    #         and left_sphere_locked and right_sphere_locked):
-    #         # Recompute current eye-sphere positions (scale-aware)
-    #         current_nose_scale = math_utils.compute_scale(nose_points_3d)
-    #         scale_ratio_l = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
-    #         scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
-    #         sphere_world_l_now = head_center + R_final @ (left_sphere_local_offset * scale_ratio_l)
-    #         sphere_world_r_now = head_center + R_final @ (right_sphere_local_offset * scale_ratio_r)
-
-    #         # Combined gaze direction (use smoothed if available; otherwise instantaneous)
-    #         if 'avg_combined_direction' in locals() and avg_combined_direction is not None:
-    #             D = math_utils._normalize(np.asarray(avg_combined_direction, dtype=float))
-    #         else:
-    #             lg = iris_3d_left  - sphere_world_l_now
-    #             rg = iris_3d_right - sphere_world_r_now
-    #             if np.linalg.norm(lg) < 1e-9 or np.linalg.norm(rg) < 1e-9:
-    #                 print("[Marker] Gaze direction invalid; try again.")
-    #                 D = None
-    #             else:
-    #                 lg /= np.linalg.norm(lg)
-    #                 rg /= np.linalg.norm(rg)
-    #                 D = math_utils._normalize(lg + rg)
-
-    #         if D is not None:
-    #             O = (sphere_world_l_now + sphere_world_r_now) * 0.5
-    #             C = np.asarray(monitor_center_w, dtype=float)
-    #             N = math_utils._normalize(np.asarray(monitor_normal_w, dtype=float))
-    #             denom = float(np.dot(N, D))
-    #             if abs(denom) < 1e-6:
-    #                 print("[Marker] Gaze ray parallel to monitor; no marker.")
-    #             else:
-    #                 t = float(np.dot(N, (C - O)) / denom)
-    #                 if t <= 0.0:
-    #                     print("[Marker] Intersection behind/at eye; no marker.")
-    #                 else:
-    #                     P = O + t * D  # world-space intersection
-    #                     # Map P to monitor local (a,b), then store if inside the quad
-    #                     p0, p1, p2, p3 = [np.asarray(p, dtype=float) for p in monitor_corners]
-    #                     u = p1 - p0
-    #                     v = p3 - p0
-    #                     u_len2 = float(np.dot(u, u))
-    #                     v_len2 = float(np.dot(v, v))
-    #                     if u_len2 > 1e-9 and v_len2 > 1e-9:
-    #                         wv = P - p0
-    #                         a = float(np.dot(wv, u) / u_len2)
-    #                         b = float(np.dot(wv, v) / v_len2)
-    #                         if 0.0 <= a <= 1.0 and 0.0 <= b <= 1.0:
-    #                             gaze_markers.append((a, b))
-    #                             print(f"[Marker] Added at a={a:.3f}, b={b:.3f}")
-    #                         else:
-    #                             print("[Marker] Gaze not on monitor; no marker.")
-    #                     else:
-    #                         print("[Marker] Monitor dimensions degenerate; no marker.")
-    #     else:
-    #         print("[Marker] Monitor/gaze not ready; complete center calibration first.")
 
 cap.release()
 cv2.destroyAllWindows()
