@@ -58,6 +58,7 @@ class MouseController:
         last_xy = (0, 0)
         
         while self.running:
+            print("🟠[Mouse] running mouse over thread")
             # 터치 중이거나 홀드오프 기간이면 대기
             if self.touch_active or (time.time() - self.last_touch_end < config.TOUCH_HOLDOFF):
                 time.sleep(0.01)
