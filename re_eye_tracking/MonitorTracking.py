@@ -90,8 +90,18 @@ face_mesh = mp_face_mesh.FaceMesh(
 # 카메라 열기
 # =========================
 cap = cv2.VideoCapture(config.CAMERA_INDEX)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+# 안전장치: 최대값 제한
+MAX_DIMENSION = 4096  # 안전한 최대값
+if w > MAX_DIMENSION or h > MAX_DIMENSION or w <= 0 or h <= 0:
+    print(f"[WARNING] Invalid camera resolution: {w}x{h}, using defaults")
+    w, h = 640, 480
+
+print(f"[Camera] Resolution set to: {w}x{h}")
 
 # === Nose-only landmark indices (for stable up/down eye sphere tracking) ===
 # These landmarks are near the nose and are less affected by lateral head movement
@@ -416,6 +426,15 @@ def render_debug_view_orbit(
     """월드 공간 요소(머리 중심/눈 구체/모니터 평면/시선 등)를 가상 카메라 시점으로 투영하여
     별도 창("Head/Eye Debug")에 렌더링. 오빗 키로 시점 제어.
     """
+    # 안전장치: 디버그 뷰 크기 제한
+    MAX_DEBUG_SIZE = 1920
+    if h > MAX_DEBUG_SIZE or w > MAX_DEBUG_SIZE:
+        # 비율 유지하며 축소
+        scale = min(MAX_DEBUG_SIZE / h, MAX_DEBUG_SIZE / w)
+        h = int(h * scale)
+        w = int(w * scale)
+        print(f"[Debug View] Resized to: {w}x{h}")
+    
     if head_center3d is None:
         return
 
