@@ -11,6 +11,7 @@ import keyboard
 
 import config
 import utils
+from click_controller import ClickController 
 
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
@@ -221,6 +222,16 @@ def mouse_mover():
 # 데몬 스레드 시작
 threading.Thread(target=mouse_mover, daemon=True).start()
 
+# ============ 클릭 컨트롤러 초기화 (추가) ============
+click_controller = ClickController(
+    prepare_time=0.4,    # 0.4초 후 준비 단계 시작
+    progress_time=0.8,   # 0.8초 후 진행 단계 시작
+    click_time=1.2,      # 1.2초 후 클릭 실행
+    radius=50,           # 50픽셀 반경 허용
+    cooldown=0.5         # 클릭 후 0.5초 대기
+)
+print("[Click Controller] Initialized")
+
 # Eye sphere tracking variables (from new script)
 # =========================
 # 눈 구체(eye sphere) 추정/고정 관련 상태값
@@ -341,6 +352,20 @@ while cap.isOpened():
                 calibration_offset_yaw, 
                 calibration_offset_pitch
             )
+            
+            # ============ 클릭 컨트롤러 업데이트 (추가) ============
+            current_time = time.time()
+            current_pos = (screen_x, screen_y) if mouse_control_enabled else None
+            
+            click_state = click_controller.update(current_pos, current_time)
+            
+            # 클릭 실행
+            if click_state['should_click']:
+                try:
+                    pyautogui.click(screen_x, screen_y)
+                    print(f"[Click] ✓ at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
+                except Exception as e:
+                    print(f"[Click] Error: {e}")
 
             # 마우스 이동 목표 업데이트(스레드가 이동 수행)
             if mouse_control_enabled:
@@ -363,7 +388,9 @@ while cap.isOpened():
     # F7: 마우스 제어 토글(디바운싱)
     if keyboard.is_pressed('f7'):
         mouse_control_enabled = not mouse_control_enabled
+        click_controller.set_enabled(mouse_control_enabled)
         print(f"[Mouse Control] {'Enabled' if mouse_control_enabled else 'Disabled'}")
+        print(f"[Click Controller] {'Enabled' if mouse_control_enabled else 'Disabled'}") 
         time.sleep(0.3)  # debounce to prevent rapid toggling
 
     key = cv2.waitKey(1) & 0xFF
