@@ -507,6 +507,9 @@ async def handle_frontend(websocket):
 
             # === 잠금화면 / PIR ===
             if msg_type == "PIR_ON":
+                if mode_select_processing:
+                    mode_select_processing = False
+                    print(f"🔵[Hub] [PIR_ON] mode_select_processing is True → {mode_select_processing}")
                 await start_pir(websocket)
 
             elif msg_type == "PIR_OFF":
