@@ -197,6 +197,7 @@ class EyeTrackingWorker:
             self._draw_status(frame)
             
             cv2.imshow("Eye Tracking", frame)
+            cv2.waitKey(1)
         
         # Cleanup
         self.cleanup()
