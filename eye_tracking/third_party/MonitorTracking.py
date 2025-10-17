@@ -76,7 +76,7 @@ face_mesh = mp_face_mesh.FaceMesh(
 )
 
 # === Open webcam ===
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
