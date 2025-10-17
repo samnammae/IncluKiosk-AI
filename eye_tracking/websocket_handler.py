@@ -103,7 +103,7 @@ class WebSocketHandler:
             self.fist_enabled = False
             self.force_mouse_on = False
             self._log("[eye_worker WS] → eye_calib_requested=True, ALL features OFF")
-            print("[eye_worker WS] EYE_CALIB_ON → 통합 캘리브레이션 모드 (화면 중앙을 보세요)")
+            print("🟡[eye_worker WS] EYE_CALIB_ON → 통합 캘리브레이션 모드 (화면 중앙을 보세요)")
             
             if self.on_eye_calib_on:
                 self.on_eye_calib_on()
@@ -113,7 +113,7 @@ class WebSocketHandler:
             self.fist_enabled = False
             self.force_mouse_on = True
             self._log("[eye_worker WS] → fist=False, mouse=True, click=True")
-            print("[eye_worker WS] EYE_ORDER_ON → 주먹OFF, 마우스ON, 클릭ON")
+            print("🟡[eye_worker WS] EYE_ORDER_ON → 주먹OFF, 마우스ON, 클릭ON")
             
             if self.on_eye_order_on:
                 self.on_eye_order_on()
@@ -122,7 +122,7 @@ class WebSocketHandler:
             self.fist_enabled = True
             self.force_mouse_on = True
             self._log("[eye_worker WS] → fist=True, mouse=True, click=False")
-            print("[eye_worker WS] MOUSE_ON → 주먹ON, 마우스ON, 클릭OFF")
+            print("🟡[eye_worker WS] MOUSE_ON → 주먹ON, 마우스ON, 클릭OFF")
             
             if self.on_mouse_on:
                 self.on_mouse_on()
@@ -131,7 +131,7 @@ class WebSocketHandler:
             self.fist_enabled = False
             self.force_mouse_on = False
             self._log("[eye_worker WS] → STOP_ALL: all features disabled")
-            print("[eye_worker WS] STOP_ALL → 모든 기능 비활성화")
+            print("🟡[eye_worker WS] STOP_ALL → 모든 기능 비활성화")
             
             if self.on_stop_all:
                 self.on_stop_all()

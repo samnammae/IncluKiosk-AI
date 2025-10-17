@@ -136,8 +136,7 @@ class EyeTrackingWorker:
         while self.cap.isOpened():
             ret, frame = self.cap.read()
             if not ret:
-                dbg("[Frame] read failed!")
-                print("[ERROR] Failed to read frame!")
+                print("🟡[eye_worker WS] [ERROR] Failed to read frame!")
                 break
             
             # FPS 계산
@@ -224,8 +223,7 @@ class EyeTrackingWorker:
         # 주먹 감지
         if curr_fist and (not self.hand_last_state) and (now - self.last_fist_time > config.FIST_COOLDOWN):
             self.last_fist_time = now
-            dbg("[Hand] FIST TRIGGER -> sending FIST_DETECTED")
-            print("[Hand] FIST TRIGGER -> Sending FIST_DETECTED to hub")
+            print("🟡[eye_worker WS] [Hand] FIST TRIGGER -> Sending FIST_DETECTED to hub")
             asyncio.run(self.ws_handler.send_fist_detected())
         
         self.hand_last_state = curr_fist
@@ -258,16 +256,15 @@ class EyeTrackingWorker:
         
         # 캘리브레이션 자동 실행
         if self.ws_handler.eye_calib_requested and not self.calib_state.is_calibrated():
-            dbg("[Calib] Auto-triggering FULL calibration (face mesh ready)")
-            print("[Calib] 🎯 얼굴 감지됨 → 자동 통합 캘리브레이션 시작")
-            print("[Calib] 💡 화면 중앙을 보세요...")
+            print("🟡[eye_worker WS] [Calib] 🎯 얼굴 감지됨 → 자동 통합 캘리브레이션 시작")
+            print("🟡[eye_worker WS] [Calib] 💡 화면 중앙을 보세요...")
             
             # ✅ 통합 캘리브레이션 (c + s 한 번에)
             perform_full_calibration(
                 self.calib_state, head_center, R_final, nose_points_3d,
                 iris_3d_left, iris_3d_right, face_landmarks, self.w, self.h
             )
-            print("[Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
+            print("🟡[eye_worker WS] [Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
             
             asyncio.run(self.ws_handler.send_calib_complete())
             self.ws_handler.eye_calib_requested = False
@@ -314,7 +311,7 @@ class EyeTrackingWorker:
             try:
                 pyautogui.click(screen_x, screen_y)
                 dbg(f"[Click] ✓ at ({screen_x}, {screen_y}) [count={self.click_controller.click_count}]")
-                print(f"[Click] ✓ Executed at ({screen_x}, {screen_y})")
+                print(f"🟡[eye_worker WS] [Click] ✓ Executed at ({screen_x}, {screen_y})")
             except Exception as e:
                 dbg(f"[Click] ✗ Error: {e}")
         
