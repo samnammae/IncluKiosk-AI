@@ -29,6 +29,7 @@ screen_calib_requested = False
 mouse_only_requested = False
 mouse_click_requested = False
 stop_requested = False
+calib_just_completed = False
 
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
@@ -567,12 +568,16 @@ while cap.isOpened():
         print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
         print("🟠 [Eye Worker] 캘리브레이션 완료")
         
-        # ============ 자동으로 's' 키 로직 실행 ============
+        calib_just_completed = True
+
+    # ============ 캘리브레이션 직후 다음 프레임 처리 (추가) ============
+    if calib_just_completed and left_sphere_locked and right_sphere_locked:
+        print("🟠 [Eye Worker] 화면 중앙 보정 자동 실행...")
         
         # 현재 시선 방향 계산
-        left_gaze_dir = iris_3d_left - sphere_world_l
+        left_gaze_dir = iris_3d_left - sphere_world_l  # ✅ 정확히 동일!
         left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-        right_gaze_dir = iris_3d_right - sphere_world_r
+        right_gaze_dir = iris_3d_right - sphere_world_r  # ✅ 정확히 동일!
         right_gaze_dir /= np.linalg.norm(right_gaze_dir)
         current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
         current_combined_direction /= np.linalg.norm(current_combined_direction)
@@ -586,10 +591,10 @@ while cap.isOpened():
         calibration_offset_pitch = 0 - raw_pitch
         
         print(f"🟠 [Eye Worker] 화면 보정 완료: Yaw={calibration_offset_yaw:.2f}°, Pitch={calibration_offset_pitch:.2f}°")
-        
-        # ============ Hub에 완료 신호 전송 ============
-        send_queue.put({"type": "EYE_CALIB_COMPLETE"})    
-    
+
+        send_queue.put({"type": "EYE_CALIB_COMPLETE"})
+        calib_just_completed = False  # ← 플래그 해제
+
     # # -------------------------
     # # 키보드 입력 처리(전역)
     # # -------------------------
