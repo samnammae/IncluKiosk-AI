@@ -64,7 +64,7 @@ def perform_eye_calibration(calib_state, head_center, R_final, nose_points_3d,
         iris_3d_right: 오른쪽 홍채 3D 좌표
         face_landmarks: 얼굴 랜드마크 (Optional, monitor plane 생성 시 필요)
         w, h: 프레임 크기 (Optional, monitor plane 생성 시 필요)
-    """
+    """    
     current_nose_scale = compute_scale(nose_points_3d)
     camera_dir_world = np.array([0, 0, 1], dtype=float)
     camera_dir_local = R_final.T @ camera_dir_world
@@ -184,6 +184,7 @@ def perform_full_calibration(calib_state, head_center, R_final, nose_points_3d,
     Returns:
         True: 성공, False: 실패
     """
+    import pyautogui
     # 1단계: 눈 위치 캘리브레이션 (c 키와 동일)
     perform_eye_calibration(
         calib_state, head_center, R_final, nose_points_3d,
@@ -196,6 +197,11 @@ def perform_full_calibration(calib_state, head_center, R_final, nose_points_3d,
         calib_state, head_center, R_final, nose_points_3d,
         iris_3d_left, iris_3d_right
     )
+    
+    # ✅ 3단계: 마우스를 화면 중앙으로 즉시 이동
+    print(f"🟡[eye_worker WS] [Calibration] 마우스를 화면 중앙({config.CENTER_X}, {config.CENTER_Y})으로 이동")
+    pyautogui.moveTo(config.CENTER_X, config.CENTER_Y, duration=0)  # duration=0: 즉시 이동
+    
     
     return True
 

@@ -265,6 +265,11 @@ class EyeTrackingWorker:
                 self.calib_state, head_center, R_final, nose_points_3d,
                 iris_3d_left, iris_3d_right, face_landmarks, self.w, self.h
             )
+        
+            # ✅ 마우스 컨트롤러의 target도 중앙으로 초기화
+            self.mouse_controller.set_target(config.CENTER_X, config.CENTER_Y)
+            print(f"🟡[eye_worker WS] [Calibration] 마우스 컨트롤러 target 초기화: ({config.CENTER_X}, {config.CENTER_Y})")
+        
             print("🟡[eye_worker WS] [Calibration] ✓ Complete (눈 위치 + 화면 중앙 보정)")
             
             asyncio.run(self.ws_handler.send_calib_complete())
