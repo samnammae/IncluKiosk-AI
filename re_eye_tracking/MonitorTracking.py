@@ -76,6 +76,8 @@ if w > MAX_DIMENSION or h > MAX_DIMENSION or w <= 0 or h <= 0:
 
 print(f"[Camera] Resolution set to: {w}x{h}")
 
+print(f"[Size] {config.MONITOR_WIDTH} x {config.MONITOR_HEIGHT}")
+
 # === Nose-only landmark indices (for stable up/down eye sphere tracking) ===
 # These landmarks are near the nose and are less affected by lateral head movement
 # =========================
