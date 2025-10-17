@@ -131,7 +131,8 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction,
     """
     시선 벡터를 화면 좌표로 변환
     """
-    reference_forward = np.array([0, 0, -1])
+    # reference_forward = np.array([0, 0, -1])
+    reference_forward = np.array([0, 0.5, -0.87])
     avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
     
     print(f"🟣[GazeTracking] [DEBUG] avg_direction: {avg_direction}")
