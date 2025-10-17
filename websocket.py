@@ -452,6 +452,7 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         
         await send_to_front({"type": "ORDER_CANCEL"})
         
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
         except Exception as e:
@@ -467,6 +468,7 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         await send_to_front({"type": "STT_ERR"})
         
         # 2. 오류 안내 TTS 재생
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(
                 None, 
@@ -531,6 +533,7 @@ async def handle_frontend(websocket):
                 
                 # 🆕 모든 워커 안전하게 정지
                 # await stop_all_workers_safely()
+                loop = asyncio.get_running_loop()
                 try:
                     await loop.run_in_executor(None, tts_stt.play_height_guide_message)
                 except Exception as e:
@@ -565,6 +568,7 @@ async def handle_frontend(websocket):
                 if not eye_running():
                     # 워커 새로 실행 → READY를 새로 기다려야 함
                     print("🔵[Hub] [DEBUG] 🔄 eye_running() == False → start_eye() 호출 예정")
+                    loop = asyncio.get_running_loop()
                     try:
                         await loop.run_in_executor(None, tts_stt.play_calib_guide_message)
                     except Exception as e:
@@ -602,6 +606,7 @@ async def handle_frontend(websocket):
                     continue
                 
                 mode_select_processing = True
+                loop = asyncio.get_running_loop()
                 try:
                     await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
                 except Exception as e:
