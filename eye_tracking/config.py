@@ -103,7 +103,7 @@ BASE_RADIUS = 20
 
 # Gaze angle ranges (degrees)
 YAW_DEGREES = 15
-PITCH_DEGREES = 30
+PITCH_DEGREES = 5
 
 # =====================
 # MediaPipe Settings

@@ -131,11 +131,10 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction,
     """
     시선 벡터를 화면 좌표로 변환
     """
-    # reference_forward = np.array([0, 0, -1])
-    reference_forward = np.array([0, 0.5, -0.87])
+    reference_forward = np.array([0, 0, -1])
     avg_direction = combined_gaze_direction / np.linalg.norm(combined_gaze_direction)
     
-    print(f"🟣[GazeTracking] [DEBUG] avg_direction: {avg_direction}")
+    print(f"🟣[GazeTracking] [DEBUG] avg_direction (original): {avg_direction}")
     
     # Yaw 계산
     xz_proj = np.array([avg_direction[0], 0, avg_direction[2]])
@@ -165,13 +164,13 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction,
     print(f"🟣[GazeTracking] [DEBUG] Before flip - yaw: {yaw_deg:.2f}, pitch: {pitch_deg:.2f}")
     
     # ❌ 기존의 잘못된 좌우 반전 제거
-    # if yaw_deg < 0:
-    #     yaw_deg = -yaw_deg
-    # elif yaw_deg > 0:
-    #     yaw_deg = -yaw_deg
+    if yaw_deg < 0:
+        yaw_deg = -yaw_deg
+    elif yaw_deg > 0:
+        yaw_deg = -yaw_deg
     
     # ✅ 올바른 좌우 반전 (필요한 경우만)
-    yaw_deg = -yaw_deg  # 한 번만 반전
+    # yaw_deg = -yaw_deg  # 한 번만 반전
     
     raw_yaw_deg = yaw_deg
     raw_pitch_deg = pitch_deg
