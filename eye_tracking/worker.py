@@ -415,7 +415,7 @@ while cap.isOpened():
         for hand_landmarks in hands_results.multi_hand_landmarks:
             if is_fist(hand_landmarks, w, h):
                 current_fist_detected = True
-                hub_ws.send(json.dumps({"type": "FIST_DETECTED"}))
+                send_queue.put({"type": "FIST_DETECTED"})
                 break
     # 주먹 감지 디바운스 처리
     current_time = time.time()
