@@ -15,6 +15,12 @@ import json
 from . import config
 from . import utils
 from .click_controller import ClickController
+import threading
+import queue
+
+# 마우스 제어 전역 변수
+mouse_command_queue = queue.Queue()
+mouse_action_lock = threading.Lock()  # pyautogui 호출 전용 락
 
 # ============ WebSocket 통신 관련 추가 ============
 HUB_URI = "ws://localhost:8766"
@@ -327,14 +333,32 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
 # 마우스 이동 보조 스레드(토글 시 mouse_target으로 이동)
 # =========================
 def mouse_mover():
-    """Mouse movement thread from old script"""
-    """mouse_control_enabled가 True일 때, 10ms 간격으로 mouse_target 위치로 커서를 이동."""
+    """마우스 이동 스레드 - 개선 버전"""
     while True:
-        if mouse_control_enabled:
-            with mouse_lock:
-                x, y = mouse_target
-            pyautogui.moveTo(x, y, _pause=False)
-        time.sleep(0.016)  # adjust for responsiveness
+        try:
+            # 큐에서 명령 확인 (click 명령 우선)
+            try:
+                command = mouse_command_queue.get_nowait()
+                if command['type'] == 'click':
+                    with mouse_action_lock:
+                        pyautogui.click(command['x'], command['y'])
+                        print(f"🟢 [Eye Worker] [Click] ✔ at ({command['x']}, {command['y']})")
+                        time.sleep(0.1)  # 클릭 후 안정화
+            except queue.Empty:
+                pass
+            
+            # 일반 마우스 이동
+            if mouse_control_enabled:
+                with mouse_lock:
+                    x, y = mouse_target
+                with mouse_action_lock:
+                    pyautogui.moveTo(x, y, _pause=False)
+            
+            time.sleep(0.016)
+            
+        except Exception as e:
+            print(f"🔴 [Mouse Mover] Error: {e}")
+            time.sleep(0.1)
 
 # Start mouse movement thread
 # 데몬 스레드 시작
@@ -525,11 +549,13 @@ while cap.isOpened():
             
             # 클릭 실행
             if click_state['should_click']:
-                try:
-                    pyautogui.click(screen_x, screen_y)
-                    print(f"🟠 [Eye Worker] [Click] ✓ at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
-                except Exception as e:
-                    print(f"🟠 [Eye Worker] [Click] Error: {e}")
+                # 직접 click 호출 대신 큐에 명령 추가
+                mouse_command_queue.put({
+                    'type': 'click',
+                    'x': screen_x,
+                    'y': screen_y
+                })
+                print(f"🟢 [Eye Worker] [Click] Queued at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
 
             # 마우스 이동 목표 업데이트(스레드가 이동 수행)
             if mouse_control_enabled:

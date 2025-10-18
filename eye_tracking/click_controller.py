@@ -13,7 +13,7 @@ class ClickController:
                  prepare_time=0.4,    # 준비 단계 (파란색)
                  progress_time=0.8,   # 진행 단계 시작 (초록색)
                  click_time=1.2,      # 클릭 실행
-                 radius=40,           # 허용 반경 (픽셀)
+                 radius=100,           # 허용 반경 (픽셀)
                  cooldown=0.5):       # 클릭 후 대기 시간
         
         self.prepare_time = prepare_time
