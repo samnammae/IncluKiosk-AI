@@ -17,6 +17,10 @@ USER_MONITOR_DISTANCE = 60.0
 # 턱-이마 기본설정값 (cm)
 DEFAULT_FACE_LENGTH = 15.0
 
+# 화면 맵핑 좌우/상하 각도 범위
+YAW_SENSITIVITY = 8
+PITCH_SENSITIVITY = 16
+
 # 모니터 실제 크기 (cm)
 MONITOR_WIDTH_CM = 19.36    # 라즈베리파이 가로
 MONITOR_HEIGHT_CM = 34.42   # 라즈베리파이 세로

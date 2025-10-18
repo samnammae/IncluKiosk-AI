@@ -256,8 +256,8 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
 
     # Specify degrees at which screen border will be reached
     # 화면 경계에 해당하는 각도 범위(경험값)
-    yawDegrees = 5 * 3  # x degrees left or right # 좌우 한계(도)
-    pitchDegrees = 2.0 * 2.5  # x degrees up or down # 상하 한계(도)
+    yawDegrees = config.YAW_SENSITIVITY  # x degrees left or right # 좌우 한계(도)
+    pitchDegrees = config.PITCH_SENSITIVITY  # x degrees up or down # 상하 한계(도)
 
     # Apply calibration offsets
     # 중앙 보정 적용('s' 키로 저장된 오프셋)
