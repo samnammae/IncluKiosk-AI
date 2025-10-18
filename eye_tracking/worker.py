@@ -415,7 +415,6 @@ while cap.isOpened():
         for hand_landmarks in hands_results.multi_hand_landmarks:
             if is_fist(hand_landmarks, w, h):
                 current_fist_detected = True
-                send_queue.put({"type": "FIST_DETECTED"})
                 break
     # 주먹 감지 디바운스 처리
     current_time = time.time()
@@ -423,9 +422,12 @@ while cap.isOpened():
         if current_time - last_fist_toggle_time > fist_debounce_time:
             fist_detected = True
             last_fist_toggle_time = current_time
+            
+            send_queue.put({"type": "FIST_DETECTED"})
+            
             # 주먹이 감지되면 클릭 컨트롤러 토글
-            mouse_control_enabled = not mouse_control_enabled
-            click_controller.set_enabled(mouse_control_enabled)
+            # mouse_control_enabled = not mouse_control_enabled
+            # click_controller.set_enabled(mouse_control_enabled)
             print(f"🟢 [Eye Worker] 주먹 감지! 마우스 제어: {'ON' if mouse_control_enabled else 'OFF'}")
     elif not current_fist_detected and fist_detected:
         if current_time - last_fist_toggle_time > fist_debounce_time:
