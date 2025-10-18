@@ -212,6 +212,12 @@ async def start_height_worker():
     
     print("🔵[Hub] [Height] 워커 시작")
     
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+    except Exception as e:
+        print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
+    
     # 🆕 에러 로그 파일에 기록
     log_file = open("/tmp/height_worker.log", "w")
     
@@ -535,12 +541,12 @@ async def handle_frontend(websocket):
                 height_last_request_time = now
                 
                 # 🆕 모든 워커 안전하게 정지
-                # await stop_all_workers_safely()
-                loop = asyncio.get_running_loop()
-                try:
-                    await loop.run_in_executor(None, tts_stt.play_height_guide_message)
-                except Exception as e:
-                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
+                # # await stop_all_workers_safely()
+                # loop = asyncio.get_running_loop()
+                # try:
+                #     await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+                # except Exception as e:
+                #     print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
