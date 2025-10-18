@@ -10,13 +10,18 @@ DEFAULT_ERROR_GUIDE = "죄송합니다, 말씀을 정확히 인식하지 못했�
 DEFAULT_CANCEL_GUIDE = "인식되는 음성이 없어 주문이 취소되었습니다."
 DEFAULT_PRE_SOUND = str(PACKAGE_DIR / "start_recording.mp3")
 
+# 화면별 안내 멘트
+HEIGHT_GUIDE_SOUND = "높이 조절 중입니다."
+CALIB_GUIDE_SOUND = "눈 보정을 실행 중입니다. 화면 중앙을 바라봐주세요."
+MODE_GUIDE_SOUND = "안녕하세요. 음성 주문을 원하시면 주먹을 쥐어주세요."
+
 # STT 설정
 STT_SILENCE_SEC = 1.2
 STT_MAX_DURATION = 60.0
 STT_CALIB_SEC = 0.4
 STT_SENSITIVITY = 2.0
 STT_MIN_SPEECH_SEC = 0.2
-STT_ENGINE = "naver"
+STT_ENGINE = "google"
 STT_SAMPLE_RATE = 16000
 STT_PRE_SOUND_PAUSE = 0.1
 STT_INITIAL_SILENCE_TIMEOUT = 5.0

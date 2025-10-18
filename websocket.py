@@ -12,16 +12,19 @@ from asyncio import Event
 from set_height.linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
 
-import time  # 파일 상단에 추가
+import time
+import psutil
 
 # 전역 변수에 추가
 height_set_processing = False
-height_last_request_time = 0  # ⬅️ 새로 추가
+height_last_request_time = 0
 HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
 
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
-PYTHON = sys.executable
+# ============ 가상환경 Python 경로 명시 ============
+VENV_PYTHON = "/home/pi/IncluKiosk/IncluKiosk_venv/bin/python"
+PYTHON = VENV_PYTHON  # ← 수정 (기존: sys.executable)
 BASE_DIR = Path(__file__).resolve().parent
 
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
@@ -41,6 +44,7 @@ mode_select_processing = False  # 모드 선택 진행 중 플래그
 chat_order_processing = False  # 대화 주문 진행 중 플래그
 normal_order_processing = False # 일반 주문 진행 중 플래그
 eye_order_processing = False # 아이트래킹 주문 진행 중 플래그
+eye_ready_flag = False
 
 eye_ready_event = None    # eye 워커 준비 신호 대기
 touch_active = False        # 터치 중 여부(브로드캐스트용)
@@ -67,6 +71,21 @@ async def broadcast_json(payload: dict):
             dead.append(ws)
     for ws in dead:
         clients.discard(ws)
+        
+import psutil  # 파일 상단에 추가
+
+def count_eye_worker_processes():
+    """실행중인 eye_tracking.worker 프로세스 개수 확인"""
+    count = 0
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info.get('cmdline', [])
+            if cmdline and 'eye_tracking.worker' in ' '.join(cmdline):
+                count += 1
+                print(f"🔵[Hub] [DEBUG] 발견된 프로세스: PID={proc.info['pid']}, CMD={' '.join(cmdline)}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return count
 
 # === 라즈베리파이 내부 워커에게 메시지 전송 === #
 async def send_to_internal_worker(payload: dict):
@@ -78,7 +97,7 @@ async def send_to_internal_worker(payload: dict):
         try:
             await ws.send(raw)
         except Exception as e:
-            print(f"[Hub→Worker] 전송 실패: {e}")
+            print(f"🔵[Hub] [Hub→Worker] 전송 실패: {e}")
             dead.append(ws)
     for ws in dead:
         internal_workers.discard(ws)
@@ -89,7 +108,7 @@ async def send_to_front(payload: dict):
         try:
             await frontend_ws.send(json.dumps(payload, ensure_ascii=False))
         except Exception as e:
-            print(f"[Hub→Front] 전송 실패: {e}")
+            print(f"🔵[Hub] [Hub→Front] 전송 실패: {e}")
             clients.discard(frontend_ws)
 
 # === pir 센서 관련 ===
@@ -124,6 +143,18 @@ async def clear_pir_state_and_notify_frontend():
 def is_running(p):
     return (p is not None) and (p.poll() is None)
 
+def pir_running():
+    p = workers.get("PIR")
+    return (p is not None) and (p.poll() is None)
+
+def eye_running():
+    global eye_proc
+    return is_running(eye_proc)
+
+def height_running():
+    global height_proc
+    return is_running(height_proc)
+
 def stop_proc(p):
     if not is_running(p):
         return None
@@ -139,21 +170,27 @@ def stop_proc(p):
 
 def start_eye():
     global eye_proc
+    # 시스템 전체 프로세스 개수 확인
+    total_count = count_eye_worker_processes()
+    print(f"🔵[Hub] [DEBUG] 🔍 시스템에서 실행중인 eye_tracking.worker 프로세스: {total_count}개")
+    
+    print(f"🔵[Hub] [DEBUG] start_eye() 호출됨")
+    print(f"🔵[Hub] [DEBUG] 현재 eye_proc 상태: {eye_proc}")
+    print(f"🔵[Hub] [DEBUG] eye_proc 실행중? {is_running(eye_proc)}")
     if is_running(eye_proc):
         return
-    # 로그 파일로 출력 (디버깅 편의)
-    log_file = open("/tmp/eye_worker.log", "w")
     env = os.environ.copy()
     # X 세션 접근 보장 (pi 사용자 기준)
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
-        [PYTHON, "-m", "eye_tracking.worker"],
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
+        [VENV_PYTHON, "-m", "eye_tracking.worker"],  # ← VENV_PYTHON 사용
+        stdout=None,
+        stderr=None,
         env=env,
         cwd=str(BASE_DIR)
     )
+    print(f"🔵[Hub] [DEBUG] ✅ 새로운 eye_proc 생성됨 (PID: {eye_proc.pid})")
 
 # === 높이 조절 관련 ===
 async def start_height_worker():
@@ -162,18 +199,18 @@ async def start_height_worker():
     
     # 이미 처리 중이면 무시
     if height_set_processing:
-        print("[Height] 이미 처리 중 (디바운싱)")
+        print("🔵[Hub] [Height] 이미 처리 중 (디바운싱)")
         return
     
     if is_running(height_proc):
-        print("[Height] 이미 실행 중")
+        print("🔵[Hub] [Height] 이미 실행 중")
         return
     
     # 처리 시작 플래그 설정
     height_set_processing = True
     await asyncio.sleep(0.1)
     
-    print("[Height] 워커 시작")
+    print("🔵[Hub] [Height] 워커 시작")
     
     # 🆕 에러 로그 파일에 기록
     log_file = open("/tmp/height_worker.log", "w")
@@ -184,8 +221,8 @@ async def start_height_worker():
         stderr=subprocess.STDOUT,
         cwd=str(BASE_DIR)  # ✅ 작업 디렉토리 설정
     )
-    print(f"[Height] 프로세스 PID: {height_proc.pid}")
-    print(f"[Height] 로그 파일: /tmp/height_worker.log")
+    print(f"🔵[Hub] [Height] 프로세스 PID: {height_proc.pid}")
+    print(f"🔵[Hub] [Height] 로그 파일: /tmp/height_worker.log")
 
     # 프로세스 종료를 감시해서 플래그를 적절히 되돌리기
     async def _watch():
@@ -197,7 +234,7 @@ async def start_height_worker():
         if proc_to_watch:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, proc_to_watch.wait)
-            print("[Height] 워커 종료 감지")
+            print("🔵[Hub] [Height] 워커 종료 감지")
             
             try:
                 with open("/tmp/height_worker.log", "r") as f:
@@ -207,7 +244,7 @@ async def start_height_worker():
                         print(log_content)
                         print("=== 로그 끝 ===")
             except Exception as e:
-                print(f"[Height] 로그 읽기 실패: {e}")
+                print(f"🔵[Hub] [Height] 로그 읽기 실패: {e}")
             
             # ⬇️ 전역 변수가 아직 이 프로세스를 가리킬 때만 초기화
             if height_proc == proc_to_watch:
@@ -224,12 +261,12 @@ async def stop_height_worker():
     proc = height_proc
     
     if not is_running(proc):
-        print("[Height] 이미 중단됨")
+        print("🔵[Hub] [Height] 이미 중단됨")
         height_set_processing = False
         height_proc = None
         return
     
-    print("[Height] 중단 명령 전송")
+    print("🔵[Hub] [Height] 중단 명령 전송")
     await send_to_internal_worker({"type": "HEIGHT_SET_OFF"})
     
     # 프로세스 종료 대기 (최대 5초)
@@ -239,9 +276,9 @@ async def stop_height_worker():
             loop.run_in_executor(None, proc.wait),  # ⬅️ proc 사용
             timeout=5.0
         )
-        print("[Height] 정상 종료됨")
+        print("🔵[Hub] [Height] 정상 종료됨")
     except asyncio.TimeoutError:
-        print("[Height] 5초 대기 후 강제 종료")
+        print("🔵[Hub] [Height] 5초 대기 후 강제 종료")
         # ⬇️ None 체크 추가
         if proc and proc.poll() is None:
             try:
@@ -258,7 +295,7 @@ async def stop_height_worker():
 
 async def stop_all_workers_safely():
     """카메라/TPU를 사용하는 모든 워커를 안전하게 정지"""
-    print("[Safety] 모든 워커 정지 시작...")
+    print("🔵[Hub] [Safety] 모든 워커 정지 시작...")
     
     # 1. 내부 워커들에게 정지 신호 전송
     await send_to_internal_worker({"type": "STOP_ALL"})
@@ -278,18 +315,40 @@ async def stop_all_workers_safely():
                 loop.run_in_executor(None, eye_proc.wait),
                 timeout=3.0
             )
-            print("[Safety] eye_proc 종료 확인")
+            print("🔵[Hub] [Safety] eye_proc 종료 확인")
         except:
             pass
     
     # 4. 카메라 해제 대기
     await asyncio.sleep(1.5)
-    print("[Safety] 모든 워커 정지 완료")
+    print("🔵[Hub] [Safety] 모든 워커 정지 완료")
+    
+async def stop_workers(eye=False, height=False, pir=False):
+    """요청한 워커만 안전하게 정지"""
+    print(f"🔵[Hub] [Safety] 선택적 정지 요청: eye={eye}, height={height}, pir={pir}")
+
+    # 1) 내부 워커에게 STOP_ALL 브로드캐스트는 하지 않음
+    #    (특정 워커만 끄는 동작이므로)
+    #    필요하면 타입별 메시지 보내기
+
+    # 2) 눈 워커
+    global eye_proc
+    if eye and eye_running():
+        eye_proc = stop_proc(eye_proc)
+        await asyncio.sleep(0.5)
+
+    # 3) 높이 워커
+    if height and height_running():
+        await stop_height_worker()
+
+    # 4) PIR 워커
+    if pir and pir_running():
+        await stop_pir()
+
+    print("🔵[Hub] [Safety] 선택적 정지 완료")
 
 # 대화 주문 핸들러
-async def handle_chat_order_on(websocket=None):
-    print("▣ ▣ ▣ CHAT_ORDER_ON 처리 로직 시작")
-    
+async def handle_chat_order_on(websocket=None):    
     # 1. 모든 워커 정지
     await stop_all_workers_safely()
     
@@ -297,10 +356,10 @@ async def handle_chat_order_on(websocket=None):
     loop = asyncio.get_running_loop()
     try:
         await loop.run_in_executor(None, tts_stt.play_chat_guide_message)
-        print("[TTS] 안내 종료 → TTS_OFF 전송")
+        print("🔵[Hub] [TTS] 안내 종료 → TTS_OFF 전송")
         await send_to_front({"type": "TTS_OFF"})
     except Exception as e:
-        print(f"[TTS] 안내 실패: {e}", file=sys.stderr)
+        print(f"🔵[Hub] [TTS] 안내 실패: {e}", file=sys.stderr)
         await send_to_front({"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
 
 # ====== TTS/STT 핸들러 ======
@@ -319,15 +378,15 @@ async def handle_tts_on(websocket, data):
     
     loop = asyncio.get_running_loop()
     try:
-        print(f"[TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
+        print(f"🔵[Hub] [TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
         await loop.run_in_executor(
             None,
             partial(tts_stt.tts_play, text, lang, voice, rate, pitch, None, enc)
         )
-        print("[TTS] 응답 종료 → TTS_OFF 전송")
+        print("🔵[Hub] [TTS] 응답 종료 → TTS_OFF 전송")
         await send_json(websocket, {"type": "TTS_OFF"})
     except Exception as e:
-        print(f"[TTS] 오류: {e}", file=sys.stderr)
+        print(f"🔵[Hub] [TTS] 오류: {e}", file=sys.stderr)
         await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
 
 
@@ -344,7 +403,7 @@ async def handle_stt_on(websocket, data, loop):
     # 2. 장치 자동 선택
     if device_idx is None:
         device_idx = tts_stt.find_input_device_index()
-        print(f"[STT] deviceIndex 자동 선택: {device_idx}")
+        print(f"🔵[Hub] [STT] deviceIndex 자동 선택: {device_idx}")
     
     if device_idx is None:
         await send_json(websocket, {"type": "STT_ERROR", "message": "No input-capable device found"})
@@ -367,20 +426,20 @@ async def handle_stt_on(websocket, data, loop):
         )
     
     try:
-        print(f"[STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
+        print(f"🔵[Hub] [STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
         transcript = await loop.run_in_executor(None, run_stt)
         
         if transcript and transcript.strip():
             # 성공!
             stt_fail_count = 0
-            print(f"[STT] 성공 결과: \"{transcript}\"")
+            print(f"🔵[Hub] [STT] 성공 결과: \"{transcript}\"")
             await send_json(websocket, {"type": "STT_OFF", "message": transcript})
         else:
             # 실패 - 모든 처리는 handle_stt_failure에서
             await handle_stt_failure(websocket, loop, language_code)
     
     except Exception as e:
-        print(f"[STT] 예외 발생: {e}", file=sys.stderr)
+        print(f"🔵[Hub] [STT] 예외 발생: {e}", file=sys.stderr)
         await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
 
 
@@ -388,18 +447,19 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
     """STT 실패 처리 (통합)"""
     global stt_fail_count
     stt_fail_count += 1
-    print(f"[STT] 실패 처리 ({stt_fail_count}/2)")
+    print(f"🔵[Hub] [STT] 실패 처리 ({stt_fail_count}/2)")
     
     # 2회 실패 시 주문 취소
     if stt_fail_count >= 2:
-        print("[ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
+        print("🔵[Hub] [ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
         
         await send_to_front({"type": "ORDER_CANCEL"})
         
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
         except Exception as e:
-            print(f"[TTS] 취소 안내 실패: {e}", file=sys.stderr)
+            print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
         
         await send_to_front({"type": "CANCEL_END"})
         
@@ -411,20 +471,21 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         await send_to_front({"type": "STT_ERR"})
         
         # 2. 오류 안내 TTS 재생
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(
                 None, 
                 partial(tts_stt.play_error_guide_message, lang=language_code)
             )
         except Exception as e:
-            print(f"[TTS] 오류 안내 실패: {e}", file=sys.stderr)
+            print(f"🔵[Hub] [TTS] 오류 안내 실패: {e}", file=sys.stderr)
         
         # 3. ERR_END 전송
         await send_json(websocket, {"type": "ERR_END"})
 
 async def handle_frontend(websocket):
     global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing, chat_order_processing, normal_order_processing, eye_order_processing
-    print("클라이언트 연결됨")
+    print("🔵[Hub] 클라이언트 연결됨")
     
     # 프론트 연결 저장
     frontend_ws = websocket
@@ -433,7 +494,6 @@ async def handle_frontend(websocket):
 
     try:
         async for raw in websocket:
-            print(f"받은 메시지: {raw}")
             try:
                 data = json.loads(raw)
                 if not isinstance(data, dict):
@@ -448,124 +508,126 @@ async def handle_frontend(websocket):
                 await send_json(websocket, {"type": "ERROR", "message": "Missing 'type' field"})
                 continue
 
-            print(f"파싱된 type: {msg_type}")
+            print(f"🔵[Hub] [Front→Hub] 수신: {msg_type} - {msg_text}")
 
             # === 잠금화면 / PIR ===
             if msg_type == "PIR_ON":
+                if mode_select_processing:
+                    mode_select_processing = False
+                    print(f"🔵[Hub] [PIR_ON] mode_select_processing is True → {mode_select_processing}")
                 await start_pir(websocket)
 
-            elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
-                await send_to_front({"type": "PIR_DETECTED"})
-
             elif msg_type == "PIR_OFF":
-                print("▣ ▣ ▣ PIR_OFF!!!")
-                # 잠금화면 복귀: 모든 워커 종료
-                # 1. 내부 워커에게 종료 신호 전송
                 await send_to_internal_worker({"type": "PIR_OFF"})
-                await send_to_internal_worker({"type": "STOP_ALL"})
-                
-                # 2. eye_tracking_worker도 종료 (잠금화면으로 복귀)
-                eye_proc = stop_proc(eye_proc)
-                
-                # 3. PIR 워커 종료 대기
                 await asyncio.sleep(1.0)
                 await stop_pir(websocket)
-                
-                # 4. 프론트에게 완료 알림
-                # await send_to_front({"type": "PIR_END"})
-                print("[PIR_OFF] 모든 워커 종료 완료")
 
             # === 높이조절 ===
-            elif msg_type == "HEIGHT_SET_ON":
-                print("▣ ▣ ▣ HEIGHT_SET_ON!!!")
-                
+            elif msg_type == "HEIGHT_SET_ON":                
                 # ⬇️ 디바운싱 체크 추가
                 global height_last_request_time
                 now = time.time()
                 
                 if now - height_last_request_time < HEIGHT_DEBOUNCE_SEC:
-                    print(f"[Height] ⚠️ 디바운스 무시 ({now - height_last_request_time:.1f}초 < {HEIGHT_DEBOUNCE_SEC}초)")
+                    print(f"🔵[Hub] [Height] ⚠️ 디바운스 무시 ({now - height_last_request_time:.1f}초 < {HEIGHT_DEBOUNCE_SEC}초)")
                     continue
                 
                 height_last_request_time = now
                 
                 # 🆕 모든 워커 안전하게 정지
-                await stop_all_workers_safely()
+                # await stop_all_workers_safely()
+                loop = asyncio.get_running_loop()
+                try:
+                    await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+                except Exception as e:
+                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
-                print("▣ ▣ ▣ HEIGHT_SET_CANCEL (사용자 중단)")
                 await stop_height_worker()
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
 
             # === 조정/보정 ===
             elif msg_type == "EYE_CALIB_ON":
-                # 이미 캘리브레이션이 완료되었다면 무시
+                # 이미 캘리브레이션 완료되었다면 무시
                 if eye_calib_completed:
-                    print("[EYE_CALIB] ✅ 이미 캘리브레이션 완료됨 - 무시")
+                    print("🔵[Hub] [EYE_CALIB] ✅ 이미 캘리브레이션 완료됨 - 무시")
                     continue
-                
-                # 중복 방지
-                if eye_calib_processing:
-                    print("[EYE_CALIB] ⚠ 이미 진행 중 - 무시")
-                    continue
-                
-                eye_calib_processing = True
-                
-                try:
-                    print("▣ ▣ ▣ EYE_CALIB_ON!!!")
-                    await stop_all_workers_safely()
 
-                    global eye_ready_event
-                    eye_ready_event = asyncio.Event()
+                # 중복 방지: 완료 신호를 받기 전에는 재요청 무시
+                if eye_calib_processing:
+                    print("🔵[Hub] [EYE_CALIB] ⚠ 이미 진행 중 - 무시")
+                    continue
+
+                eye_calib_processing = True  # ✅ 완료 전까지 유지
+
+                # 높이/PIR만 안전 정지
+                await stop_workers(eye=False, height=True, pir=True)
+
+                global eye_ready_event, eye_ready_flag
+
+                # 워커 실행 상태 확인
+                need_wait_ready = False
+                if not eye_running():
+                    # 워커 새로 실행 → READY를 새로 기다려야 함
+                    print("🔵[Hub] [DEBUG] 🔄 eye_running() == False → start_eye() 호출 예정")
+                    loop = asyncio.get_running_loop()
+                    try:
+                        await loop.run_in_executor(None, tts_stt.play_calib_guide_message)
+                    except Exception as e:
+                        print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                     start_eye()
-                    
-                    # 프론트에 대기 메시지 전송
-                    await send_to_front({"type": "EYE_WAITING", "message": "얼굴을 카메라에 맞춰주세요..."})
-                    
+                    eye_ready_flag = False              # ✅ 새 프로세스이므로 플래그 리셋
+                    need_wait_ready = True
+                else:
+                    # 이미 실행 중인데 READY를 보낸 적이 없다면 대기
+                    print(f"🔵[Hub] [DEBUG] ✓ 이미 실행중 (PID: {eye_proc.pid if eye_proc else 'None'})")
+                    need_wait_ready = (not eye_ready_flag)
+
+                if need_wait_ready:
+                    eye_ready_event = asyncio.Event()
                     try:
                         await asyncio.wait_for(eye_ready_event.wait(), timeout=30.0)
-                        print("[EYE_CALIB] worker READY 확인")
+                        print("🔵[Hub] [EYE_CALIB] worker READY 확인")
                     except asyncio.TimeoutError:
-                        print("[EYE_CALIB] ⚠ READY 타임아웃")
-                        await send_to_front({"type": "ERROR", "message": "카메라 초기화 타임아웃"})
+                        print("🔵[Hub] [EYE_CALIB] ❌ READY 타임아웃 발생 → 프론트로 오류 전송")
+                        eye_calib_processing = False    # ❗ 실패 시 진행중 플래그 해제
+                        await send_to_front({"type": "EYE_CALIB_ERR", "message": "카메라 초기화 타임아웃"})
                         continue
+                else:
+                    print("🔵[Hub] [EYE_CALIB] 이미 READY 상태 - 대기 생략")
 
-                    # 캘리브레이션 명령 전송
-                    await send_to_internal_worker({"type": "EYE_CALIB_ON"})
-                    print("[EYE_CALIB] 명령 전송 완료")
-                    
-                    # ⭐ 캘리브레이션 완료 대기 (5초)
-                    await asyncio.sleep(5.0)
-                    await send_to_front({"type": "EYE_CALIB_COMPLETE", "message": "캘리브레이션 완료"})
-                    eye_calib_completed = True
-                    
-                finally:
-                    eye_calib_processing = False
+                # 캘리브레이션 명령 전송 (진행중 플래그는 COMPLETE에서만 내림)
+                await send_to_internal_worker({"type": "EYE_CALIB_ON"})
+                print("🔵[Hub] [EYE_CALIB] 명령 전송 완료")
+                
 
             elif msg_type == "MODE_SELECT_ON":
+                print(f"🔵[Hub] in MODE_SELECT_ON, mode_select_processing is {mode_select_processing}")
                 if mode_select_processing:
-                    print("[MODE_SELECT] ⚠ 이미 진행 중 - 무시")
+                    print("🔵[Hub] [MODE_SELECT] ⚠ 이미 진행 중 - 무시")
                     continue
                 
                 mode_select_processing = True
+                loop = asyncio.get_running_loop()
+                try:
+                    await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
+                except Exception as e:
+                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 
-                print("▣ ▣ ▣ MODE_SELECT_ON!!!")
                 if not is_running(eye_proc):
-                    print("[MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
+                    print("🔵[Hub] [MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
                     await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
                 else:
                     await send_to_internal_worker({"type": "MOUSE_ON"})
-                    print("[MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
+                    print("🔵[Hub] [MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
                 if chat_order_processing == True:
-                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    print("🔵[Hub] [CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ CHAT_ORDER_ON!!!")
                 mode_select_processing = False
                 chat_order_processing = True
                 # 대화 모드: eye_tracking_worker 종료
@@ -573,10 +635,9 @@ async def handle_frontend(websocket):
 
             elif msg_type == "NORMAL_ORDER_ON":
                 if normal_order_processing == True:
-                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    print("🔵[Hub] [CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ NORMAL_ORDER_ON!!!")
                 mode_select_processing = False                
                 normal_order_processing = True
                 # 일반 모드: eye_tracking_worker 종료
@@ -584,34 +645,30 @@ async def handle_frontend(websocket):
 
             elif msg_type == "EYE_ORDER_ON":
                 if eye_order_processing == True:
-                    print("[CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    print("🔵[Hub] [CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
-                print("▣ ▣ ▣ EYE_ORDER_ON!!!")
                 mode_select_processing = False
                 eye_order_processing = True
                 # eye_tracking_worker가 이미 실행중이면 그대로 유지 (캘리브레이션 보존!)
                 if not is_running(eye_proc):
-                    print("[EYE_ORDER] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
+                    print("🔵[Hub] [EYE_ORDER] ⚠️ eye_tracking_worker가 실행중이지 않음. EYE_CALIB_ON을 먼저 실행하세요.")
                     await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
                 else:
                     # 주먹 인식 OFF + 마우스 제어 ON (캘리브레이션 계속 유지)
                     await send_to_internal_worker({"type": "EYE_ORDER_ON"})
-                    print("[EYE_ORDER] 명령 전송 완료 (캘리브레이션 유지)")
+                    print("🔵[Hub] [EYE_ORDER] 명령 전송 완료 (캘리브레이션 유지)")
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
-                print("▣ ▣ ▣ TTS_ON!!!")
                 await handle_tts_on(websocket, data)
 
             elif msg_type == "STT_ON":
-                print("▣ ▣ ▣ STT_ON!!!")
                 loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
-                print("▣ ▣ ▣ ALL_RESET (모든 기능 정지)!!!")
                 
                 # 모든 상태 플래그 리셋
                 eye_calib_completed = False
@@ -631,13 +688,13 @@ async def handle_frontend(websocket):
                 
                 # 4. 프론트에 완료 알림
                 await send_to_front({"type": "ALL_RESET_COMPLETE"})
-                print("[ALL_RESET] 완료")
+                print("🔵[Hub] [ALL_RESET] 완료")
 
             else:
                 await send_json(websocket, {"type": "ERROR", "message": f"Unknown type: {msg_type}"})
 
     except websockets.exceptions.ConnectionClosed:
-        print("클라이언트 연결 끊김")
+        print("🔵[Hub] 클라이언트 연결 끊김")
     finally:
         clients.discard(websocket)
         stt_fail_count = 0
@@ -646,67 +703,70 @@ async def handle_frontend(websocket):
 # === 라즈베리파이 내부 통신 핸들러 ===
 async def handle_internal_worker(websocket):
     """eye_tracking_worker 및 height_worker의 WebSocket 연결 처리 (내부 통신용)"""
-    global internal_workers, height_proc, height_set_processing, eye_ready_event
+    global internal_workers, height_proc, height_set_processing, eye_ready_event, eye_calib_completed, eye_calib_processing, eye_ready_flag
     internal_workers.add(websocket)
-    print("[Internal Worker] 연결됨 (포트 8766)")
+    print("🔵[Hub] [Internal Worker] 연결됨 (포트 8766)")
     
     try:
         async for raw in websocket:
             data = json.loads(raw)
             msg_type = data.get("type")
-            print(f"[Worker→Hub] 수신: {msg_type}")
+            print(f"🔵[Hub] [Worker→Hub] 수신: {msg_type}")
             
             if msg_type == "EYE_READY":
-                print("[Hub] eye worker READY")
-                if eye_ready_event is not None:  # None 체크 추가
+                print("🔵[Hub] eye worker READY")
+                eye_ready_flag = True                    # ✅ READY 플래그 ON
+                if eye_ready_event is not None:
                     eye_ready_event.set()
-                
+
+            elif msg_type == "EYE_CALIB_COMPLETE":
+                print("🔵[Hub] ✅ 캘리브레이션 완료 확인")
+                eye_calib_completed = True
+                eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
+                await send_to_front({"type": "EYE_CALIB_END"})
+
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
-                print("▣ ▣ ▣ PIR_DETECTED(from pir-worker)")
                 await send_to_front({"type": "PIR_DETECTED"})
+                
+            # PIR 종료 감지
+            elif msg_type == "PIR_END":
+                await send_to_front({"type": "PIR_END"})
                 
             # PIR 워커 정상 종료 (WebSocket 연결 끊김 감지)
             elif msg_type == "PIR_WORKER_EXIT":
-                print("[Hub] PIR 워커 정상 종료")
                 await send_to_front({"type": "PIR_END"})
                 workers["PIR"] = None
             
             # 주먹 감지
             elif msg_type == "FIST_DETECTED":
-                print("▣ ▣ ▣ FIST_DETECTED(from eye-worker)")
                 await send_to_front({"type": "FIST_DETECTED"})
             
             # 높이 조절 완료
             elif msg_type == "HEIGHT_SET_END":
-                print("[Hub] ✅ 높이 조절 정상 완료")
                 await send_to_front({"type": "HEIGHT_SET_END"})
                 height_proc = None
                 height_set_processing = False
             
             # 높이 조절 타임아웃
             elif msg_type == "HEIGHT_SET_TIMEOUT":
-                print("[Hub] ⚠️ 높이 조절 타임아웃 (30초간 미감지)")
+                print("🔵[Hub] ⚠️ 높이 조절 타임아웃 (30초간 미감지)")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
                 height_set_processing = False
             
             # 높이 조절 취소됨
             elif msg_type == "HEIGHT_SET_CANCEL":
-                print("[Hub] 🚫 높이 조절 취소됨")
+                print("🔵[Hub] 🚫 높이 조절 취소됨")
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
                 height_set_processing = False
-                
-            elif msg_type == "EYE_CALIB_COMPLETE":
-                print("[Hub] ✅ 캘리브레이션 완료 확인")
-                await send_to_front({"type": "EYE_CALIB_END"})
     
     except websockets.exceptions.ConnectionClosed:
-        print("[Internal Worker] 연결 끊김")
+        print("🔵[Hub] [Internal Worker] 연결 끊김")
         # PIR 워커가 비정상 종료된 경우도 처리
         if workers.get("PIR") and workers["PIR"].poll() is None:
-            print("[Hub] PIR 워커 비정상 종료 감지")
+            print("🔵[Hub] PIR 워커 비정상 종료 감지")
             await send_to_front({"type": "PIR_END"})
             workers["PIR"] = None
     finally:
