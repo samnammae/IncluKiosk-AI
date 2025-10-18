@@ -372,11 +372,6 @@ right_calibration_nose_scale = None
 # 메인 루프: 프레임 처리
 # =========================
 
-# 키보드 입력을 위한 더미 윈도우 생성 (화면에 보이지 않음)
-dummy_frame = np.zeros((1, 1, 3), dtype=np.uint8)
-cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
-cv2.moveWindow("Eye Tracking (Hidden)", -1000, -1000)  # 화면 밖으로 이동
-
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -548,8 +543,6 @@ while cap.isOpened():
         if results.multi_face_landmarks:
             lm = results.multi_face_landmarks[0].landmark
             landmarks3d = np.array([[p.x * w, p.y * h, p.z * w] for p in lm], dtype=float)
-
-    cv2.imshow("Eye Tracking (Hidden)", dummy_frame)
 
     # -------------------------
     # 메시지 처리 (전역)
