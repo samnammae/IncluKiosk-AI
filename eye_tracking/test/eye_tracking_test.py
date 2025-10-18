@@ -19,9 +19,9 @@ import pyautogui
 import threading
 import keyboard
 
-import config
-import utils
-from click_controller import ClickController
+import config_test
+import utils_test
+from click_controller_test import ClickController
 
 # === (글로벌 설정 근처) ===
 clicker = ClickController(
@@ -67,7 +67,7 @@ monitor_normal_w = None  # 평면 법선(월드)
 units_per_cm = None      # 월드 단위/센티미터(대략적 스케일)
 
 # 마우스 목표 좌표(보조 스레드와 공유) + 동기화 락
-mouse_target = [config.CENTER_X, config.CENTER_Y]
+mouse_target = [config_test.CENTER_X, config_test.CENTER_Y]
 mouse_lock = threading.Lock()
 
 # Calibration offsets for screen mapping
@@ -102,7 +102,7 @@ face_mesh = mp_face_mesh.FaceMesh(
 # =========================
 # 카메라 열기
 # =========================
-cap = cv2.VideoCapture(config.CAMERA_INDEX)
+cap = cv2.VideoCapture(config_test.CAMERA_INDEX)
 w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -385,13 +385,13 @@ def convert_gaze_to_screen_coordinates(combined_gaze_direction, calibration_offs
     
     # Map to full screen resolution
     # 해상도로 선형 매핑
-    screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * config.MONITOR_WIDTH)
-    screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * config.MONITOR_HEIGHT)
+    screen_x = int(((yaw_deg + yawDegrees) / (2 * yawDegrees)) * config_test.MONITOR_WIDTH)
+    screen_y = int(((pitchDegrees - pitch_deg) / (2 * pitchDegrees)) * config_test.MONITOR_HEIGHT)
 
     # Clamp screen position to monitor bounds
     # 모니터 가장자리 밖으로 나가지 않도록 클램프(여백 10px)
-    screen_x = max(10, min(screen_x, config.MONITOR_WIDTH - 10))
-    screen_y = max(10, min(screen_y, config.MONITOR_HEIGHT - 10))
+    screen_x = max(10, min(screen_x, config_test.MONITOR_WIDTH - 10))
+    screen_y = max(10, min(screen_y, config_test.MONITOR_HEIGHT - 10))
 
     return screen_x, screen_y, raw_yaw_deg, raw_pitch_deg
 
@@ -438,14 +438,14 @@ def render_debug_view_orbit(
 
     # --- Camera pose (orbit around pivot_w) ---
     # (2) 카메라 포즈(피벗을 향해 orbit)
-    f_px = utils._focal_px(w, orbit_fov_deg)
-    cam_offset = utils._rot_y(orbit_yaw) @ (utils._rot_x(orbit_pitch) @ np.array([0.0, 0.0, orbit_radius]))
+    f_px = utils_test._focal_px(w, orbit_fov_deg)
+    cam_offset = utils_test._rot_y(orbit_yaw) @ (utils_test._rot_x(orbit_pitch) @ np.array([0.0, 0.0, orbit_radius]))
     cam_pos = pivot_w + cam_offset
 
     up_world = np.array([0.0, -1.0, 0.0])   # image-space up is -Y
-    fwd = utils._normalize(pivot_w - cam_pos)     # look at pivot // 카메라가 바라보는 방향
-    right = utils._normalize(np.cross(fwd, up_world))
-    up = utils._normalize(np.cross(right, fwd))
+    fwd = utils_test._normalize(pivot_w - cam_pos)     # look at pivot // 카메라가 바라보는 방향
+    right = utils_test._normalize(np.cross(fwd, up_world))
+    up = utils_test._normalize(np.cross(right, fwd))
     V = np.stack([right, up, fwd], axis=0)  # 월드→카메라 좌표 변환
 
     def project_point(P):
@@ -528,7 +528,7 @@ def render_debug_view_orbit(
             cv2.circle(debug, (cx, cy), r_px, (255, 255, 25), 1)
             if iris3d_l is not None:
                 left_dir = np.asarray(iris3d_l) - np.asarray(sphere_world_l)
-                p1 = project_point(np.asarray(sphere_world_l) + utils._normalize(left_dir) * gaze_len)
+                p1 = project_point(np.asarray(sphere_world_l) + utils_test._normalize(left_dir) * gaze_len)
                 if p1 is not None:
                     cv2.line(debug, (cx, cy), p1[0], (155, 155, 25), 1)
     elif iris3d_l is not None:
@@ -544,7 +544,7 @@ def render_debug_view_orbit(
             cv2.circle(debug, (cx, cy), r_px, (25, 255, 255), 1)
             if iris3d_r is not None:
                 right_dir = np.asarray(iris3d_r) - np.asarray(sphere_world_r)
-                p1 = project_point(np.asarray(sphere_world_r) + utils._normalize(right_dir) * gaze_len)
+                p1 = project_point(np.asarray(sphere_world_r) + utils_test._normalize(right_dir) * gaze_len)
                 if p1 is not None:
                     cv2.line(debug, (cx, cy), p1[0], (25, 155, 155), 1)
     elif iris3d_r is not None:
@@ -556,13 +556,13 @@ def render_debug_view_orbit(
         origin_mid = (np.asarray(sphere_world_l) + np.asarray(sphere_world_r)) / 2.0
         if combined_dir is None and (left_dir is not None or right_dir is not None):
             parts = []
-            if left_dir is not None:  parts.append(utils._normalize(left_dir))
-            if right_dir is not None: parts.append(utils._normalize(right_dir))
+            if left_dir is not None:  parts.append(utils_test._normalize(left_dir))
+            if right_dir is not None: parts.append(utils_test._normalize(right_dir))
             if parts:
-                combined_dir = utils._normalize(np.mean(parts, axis=0))
+                combined_dir = utils_test._normalize(np.mean(parts, axis=0))
         if combined_dir is not None:
             p0 = project_point(origin_mid)
-            p1 = project_point(origin_mid + utils._normalize(combined_dir) * (gaze_len * 1.2))
+            p1 = project_point(origin_mid + utils_test._normalize(combined_dir) * (gaze_len * 1.2))
             if p0 is not None and p1 is not None:
                 cv2.line(debug, p0[0], p1[0], (155, 200, 10), 2)
 
@@ -612,11 +612,11 @@ def render_debug_view_orbit(
 
         # Ray: origin at midpoint between eyes; direction = combined gaze
         O = (np.asarray(sphere_world_l, dtype=float) + np.asarray(sphere_world_r, dtype=float)) * 0.5
-        D = utils._normalize(np.asarray(combined_dir, dtype=float))
+        D = utils_test._normalize(np.asarray(combined_dir, dtype=float))
 
         # Plane: through monitor_center with normal = monitor_normal
         C = np.asarray(monitor_center, dtype=float)
-        N = utils._normalize(np.asarray(monitor_normal, dtype=float))
+        N = utils_test._normalize(np.asarray(monitor_normal, dtype=float))
 
         denom = float(np.dot(N, D))
         if abs(denom) > 1e-6:
@@ -728,7 +728,7 @@ while cap.isOpened():
         if not left_sphere_locked:
             cv2.circle(frame, (x_iris_l, y_iris_l), 10, (255, 25, 25), 2)
         else:
-            current_nose_scale = utils.compute_scale(nose_points_3d)
+            current_nose_scale = utils_test.compute_scale(nose_points_3d)
             scale_ratio = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
             scaled_offset = left_sphere_local_offset * scale_ratio
             sphere_world_l = head_center + R_final @ scaled_offset
@@ -743,7 +743,7 @@ while cap.isOpened():
         if not right_sphere_locked:
             cv2.circle(frame, (x_iris_r, y_iris_r), 10, (25, 255, 25), 2)
         else:
-            current_nose_scale = utils.compute_scale(nose_points_3d)
+            current_nose_scale = utils_test.compute_scale(nose_points_3d)
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
             scaled_offset_r = right_sphere_local_offset * scale_ratio_r
             sphere_world_r = head_center + R_final @ scaled_offset_r
@@ -908,7 +908,7 @@ while cap.isOpened():
         break
     elif key == ord('c') and not (left_sphere_locked and right_sphere_locked):
         # 1) 현 프레임의 코 영역 스케일 측정
-        current_nose_scale = utils.compute_scale(nose_points_3d)
+        current_nose_scale = utils_test.compute_scale(nose_points_3d)
         
         # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
         left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
@@ -947,7 +947,7 @@ while cap.isOpened():
         gaze_dir = forward_hint  # already normalized
         
         # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
-        monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
+        monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils_test.create_monitor_plane(
             head_center, R_final, face_landmarks, w, h,
             forward_hint=forward_hint,
             gaze_origin=gaze_origin,
@@ -991,7 +991,7 @@ while cap.isOpened():
         if (monitor_corners is not None and monitor_center_w is not None and monitor_normal_w is not None
             and left_sphere_locked and right_sphere_locked):
             # Recompute current eye-sphere positions (scale-aware)
-            current_nose_scale = utils.compute_scale(nose_points_3d)
+            current_nose_scale = utils_test.compute_scale(nose_points_3d)
             scale_ratio_l = current_nose_scale / left_calibration_nose_scale if left_calibration_nose_scale else 1.0
             scale_ratio_r = current_nose_scale / right_calibration_nose_scale if right_calibration_nose_scale else 1.0
             sphere_world_l_now = head_center + R_final @ (left_sphere_local_offset * scale_ratio_l)
@@ -999,7 +999,7 @@ while cap.isOpened():
 
             # Combined gaze direction (use smoothed if available; otherwise instantaneous)
             if 'avg_combined_direction' in locals() and avg_combined_direction is not None:
-                D = utils._normalize(np.asarray(avg_combined_direction, dtype=float))
+                D = utils_test._normalize(np.asarray(avg_combined_direction, dtype=float))
             else:
                 lg = iris_3d_left  - sphere_world_l_now
                 rg = iris_3d_right - sphere_world_r_now
@@ -1009,12 +1009,12 @@ while cap.isOpened():
                 else:
                     lg /= np.linalg.norm(lg)
                     rg /= np.linalg.norm(rg)
-                    D = utils._normalize(lg + rg)
+                    D = utils_test._normalize(lg + rg)
 
             if D is not None:
                 O = (sphere_world_l_now + sphere_world_r_now) * 0.5
                 C = np.asarray(monitor_center_w, dtype=float)
-                N = utils._normalize(np.asarray(monitor_normal_w, dtype=float))
+                N = utils_test._normalize(np.asarray(monitor_normal_w, dtype=float))
                 denom = float(np.dot(N, D))
                 if abs(denom) < 1e-6:
                     print("[Marker] Gaze ray parallel to monitor; no marker.")
