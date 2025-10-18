@@ -36,6 +36,11 @@ pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나
 mouse_control_enabled = False       # 마우스 제어 토글 플래그(F7로 on/off). True일 때 보조 스레드가 mouse_target으로 커서를 이동
 filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최근 N개 평균)
 
+# ============ 주먹 감지 관련 변수 (추가) ============
+fist_detected = False
+fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
+last_fist_toggle_time = 0
+
 # ============ WebSocket 클라이언트 (별도 스레드) ============
 def websocket_thread_func():
     """WebSocket 통신을 담당하는 스레드 (asyncio 이벤트 루프 실행)"""
@@ -132,6 +137,16 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_tracking_confidence=0.5
 )
 
+# ============ MediaPipe Hands 초기화 ============
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    static_image_mode=False,
+    model_complexity=0,
+    max_num_hands=2,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
 # =========================
 # 카메라 열기
 # =========================
@@ -150,6 +165,38 @@ h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241, 
                 461, 125, 354, 218, 438, 195, 167, 393, 165, 391,
                 3, 248]
+
+# =========================
+# 주먹 감지 헬퍼 함수 (detection.py에서 가져옴)
+# =========================
+def _lm_xy(hand_landmarks, idx, w, h):
+    """랜드마크 XY 좌표 추출"""
+    lm = hand_landmarks.landmark[idx]
+    return np.array([lm.x * w, lm.y * h], dtype=float)
+
+def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
+    """손가락이 구부러졌는지 확인"""
+    tip = _lm_xy(hand_landmarks, tip_idx, w, h)
+    pip = _lm_xy(hand_landmarks, pip_idx, w, h)
+    wrist = _lm_xy(hand_landmarks, wrist_idx, w, h)
+    return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
+
+def is_thumb_curled(hand_landmarks, w, h):
+    """엄지가 구부러졌는지 확인"""
+    wrist = _lm_xy(hand_landmarks, 0, w, h)
+    tip = _lm_xy(hand_landmarks, 4, w, h)
+    mcp = _lm_xy(hand_landmarks, 2, w, h)
+    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist)
+
+def is_fist(hand_landmarks, w, h):
+    """주먹 제스처 감지"""
+    curled = 0
+    curled += int(is_finger_curled(hand_landmarks, 8, 6, 0, w, h))   # 검지
+    curled += int(is_finger_curled(hand_landmarks, 12, 10, 0, w, h)) # 중지
+    curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h)) # 약지
+    curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h)) # 소지
+    curled += int(is_thumb_curled(hand_landmarks, w, h))              # 엄지
+    return curled >= 4
 
 # =========================
 # 코 주변 소영역의 PCA 좌표계 계산 및 그리기
@@ -361,7 +408,29 @@ while cap.isOpened():
     # MediaPipe는 RGB 입력 요구
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(frame_rgb)
-
+    hands_results = hands.process(frame_rgb)
+    
+    current_fist_detected = False
+    if hands_results.multi_hand_landmarks:
+        for hand_landmarks in hands_results.multi_hand_landmarks:
+            if is_fist(hand_landmarks, w, h):
+                current_fist_detected = True
+                hub_ws.send(json.dumps({"type": "FIST_DETECTED"}))
+                break
+    # 주먹 감지 디바운스 처리
+    current_time = time.time()
+    if current_fist_detected and not fist_detected:
+        if current_time - last_fist_toggle_time > fist_debounce_time:
+            fist_detected = True
+            last_fist_toggle_time = current_time
+            # 주먹이 감지되면 클릭 컨트롤러 토글
+            mouse_control_enabled = not mouse_control_enabled
+            click_controller.set_enabled(mouse_control_enabled)
+            print(f"🟢 [Eye Worker] 주먹 감지! 마우스 제어: {'ON' if mouse_control_enabled else 'OFF'}")
+    elif not current_fist_detected and fist_detected:
+        if current_time - last_fist_toggle_time > fist_debounce_time:
+            fist_detected = False
+            last_fist_toggle_time = current_time
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0].landmark
 
