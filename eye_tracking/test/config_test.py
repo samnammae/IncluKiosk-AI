@@ -13,9 +13,13 @@ CENTER_X = MONITOR_WIDTH // 2
 CENTER_Y = MONITOR_HEIGHT // 2
 
 # 사용자와 모니터 사이 거리 (cm)
-USER_MONITOR_DISTANCE = 60.0
+USER_MONITOR_DISTANCE = 60
 # 턱-이마 기본설정값 (cm)
 DEFAULT_FACE_LENGTH = 15.0
+
+# 화면 맵핑 좌우/상하 각도 범위
+YAW_SENSITIVITY = 8
+PITCH_SENSITIVITY = 16
 
 # 모니터 실제 크기 (cm)
 MONITOR_WIDTH_CM = 19.36    # 라즈베리파이 가로
