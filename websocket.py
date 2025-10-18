@@ -12,16 +12,19 @@ from asyncio import Event
 from set_height.linear_actuator.linear_actuator_controller import on_shutdown
 import atexit
 
-import time  # 파일 상단에 추가
+import time
+import psutil
 
 # 전역 변수에 추가
 height_set_processing = False
-height_last_request_time = 0  # ⬅️ 새로 추가
+height_last_request_time = 0
 HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
 
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 
-PYTHON = sys.executable
+# ============ 가상환경 Python 경로 명시 ============
+VENV_PYTHON = "/home/pi/IncluKiosk/IncluKiosk_venv/bin/python"
+PYTHON = VENV_PYTHON  # ← 수정 (기존: sys.executable)
 BASE_DIR = Path(__file__).resolve().parent
 
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
@@ -181,7 +184,7 @@ def start_eye():
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
-        [PYTHON, "-m", "eye_tracking.worker"],
+        [VENV_PYTHON, "-m", "eye_tracking.worker"],  # ← VENV_PYTHON 사용
         stdout=None,
         stderr=None,
         env=env,
@@ -722,7 +725,6 @@ async def handle_internal_worker(websocket):
                 eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
                 await send_to_front({"type": "EYE_CALIB_END"})
 
-                
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
                 await send_to_front({"type": "PIR_DETECTED"})
