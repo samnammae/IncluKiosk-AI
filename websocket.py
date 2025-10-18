@@ -28,7 +28,7 @@ PYTHON = VENV_PYTHON  # ← 수정 (기존: sys.executable)
 BASE_DIR = Path(__file__).resolve().parent
 
 PIR_WORKER = str(BASE_DIR / "pir_sensor" / "pir_worker.py")
-EYE_SCRIPT = str(BASE_DIR / "re_eye_tracking" / "worker.py")
+EYE_SCRIPT = str(BASE_DIR / "eye_tracking" / "worker.py")
 HEIGHT_WORKER = str(BASE_DIR / "set_height" / "worker.py")
 
 workers = {"PIR": None}
@@ -75,12 +75,12 @@ async def broadcast_json(payload: dict):
 import psutil  # 파일 상단에 추가
 
 def count_eye_worker_processes():
-    """실행중인 re_eye_tracking.worker 프로세스 개수 확인"""
+    """실행중인 eye_tracking.worker 프로세스 개수 확인"""
     count = 0
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             cmdline = proc.info.get('cmdline', [])
-            if cmdline and 're_eye_tracking.worker' in ' '.join(cmdline):
+            if cmdline and 'eye_tracking.worker' in ' '.join(cmdline):
                 count += 1
                 print(f"🔵[Hub] [DEBUG] 발견된 프로세스: PID={proc.info['pid']}, CMD={' '.join(cmdline)}")
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -184,7 +184,7 @@ def start_eye():
     env.setdefault("DISPLAY", ":0")
     env.setdefault("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
     eye_proc = subprocess.Popen(
-        [VENV_PYTHON, "-m", "re_eye_tracking.worker"],  # ← VENV_PYTHON 사용
+        [VENV_PYTHON, "-m", "eye_tracking.worker"],  # ← VENV_PYTHON 사용
         stdout=None,
         stderr=None,
         env=env,
