@@ -18,10 +18,10 @@ USER_MONITOR_DISTANCE = 30.0
 DEFAULT_FACE_LENGTH = 15.0
 
 # 모니터 실제 크기 (cm)
-# MONITOR_WIDTH_CM = 19.36    # 라즈베리파이 가로
-# MONITOR_HEIGHT_CM = 34.42   # 라즈베리파이 세로
-MONITOR_WIDTH_CM =35.5    # 가로
-MONITOR_HEIGHT_CM = 22.5   # 세로
+MONITOR_WIDTH_CM = 19.36    # 라즈베리파이 가로
+MONITOR_HEIGHT_CM = 34.42   # 라즈베리파이 세로
+# MONITOR_WIDTH_CM =35.5    # 가로
+# MONITOR_HEIGHT_CM = 22.5   # 세로
 
 # 모니터상 마우스 커서 위치 적는 텍스트 파일
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
