@@ -557,6 +557,75 @@ while cap.isOpened():
                 })
                 print(f"🟢 [Eye Worker] [Click] Queued at ({screen_x}, {screen_y}) - Total: {click_controller.get_click_count()}")
 
+            if click_state['state'] != 'idle' and mouse_control_enabled:
+                state = click_state['state']
+                progress = click_state['progress']
+                
+                # 화면 좌표를 카메라 프레임 좌표로 변환
+                # (간단한 비율 변환 - 화면:카메라 = MONITOR:frame 크기)
+                scale_x = w / config.MONITOR_WIDTH
+                scale_y = h / config.MONITOR_HEIGHT
+                frame_x = int(screen_x * scale_x)
+                frame_y = int(screen_y * scale_y)
+                
+                # 프레임 범위 내로 제한
+                frame_x = max(50, min(frame_x, w - 50))
+                frame_y = max(50, min(frame_y, h - 50))
+                
+                # 상태별 색상 및 크기
+                if state == 'prepare':
+                    # 준비 단계: 파란색 원
+                    color = (255, 100, 0)  # BGR: 파란색
+                    outer_radius = int(30 + progress * 20)  # 30~50px
+                    inner_radius = int(outer_radius * progress * 0.6)
+                    thickness = 2
+                    
+                elif state == 'progress':
+                    # 진행 단계: 초록색 원 (점점 커짐)
+                    color = (0, 255, 0)  # BGR: 초록색
+                    # progress는 0.5~1.0 범위, 이를 0~1로 정규화
+                    norm_progress = (progress - 0.5) / 0.5
+                    outer_radius = int(50 + norm_progress * 30)  # 50~80px
+                    inner_radius = int(outer_radius * norm_progress)
+                    thickness = 3
+                    
+                elif state == 'click':
+                    # 클릭 순간: 빨간색 채워진 원 (짧게 표시)
+                    color = (0, 0, 255)  # BGR: 빨간색
+                    outer_radius = 90
+                    inner_radius = outer_radius
+                    thickness = -1  # 채우기
+                
+                # 외곽 원 그리기
+                cv2.circle(frame, (frame_x, frame_y), outer_radius, color, thickness)
+                
+                # 진행도를 나타내는 내부 원 (prepare/progress 상태)
+                if state in ['prepare', 'progress'] and inner_radius > 0:
+                    cv2.circle(frame, (frame_x, frame_y), inner_radius, color, -1)
+                
+                # 진행 시간 텍스트 표시
+                if state in ['prepare', 'progress']:
+                    elapsed = click_state['elapsed']
+                    text = f"{elapsed:.1f}s"
+                    # 텍스트 배경 (가독성 향상)
+                    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                    text_x = frame_x - text_size[0] // 2
+                    text_y = frame_y - outer_radius - 15
+                    
+                    # 배경 사각형
+                    cv2.rectangle(frame, 
+                                 (text_x - 5, text_y - text_size[1] - 5),
+                                 (text_x + text_size[0] + 5, text_y + 5),
+                                 (0, 0, 0), -1)
+                    
+                    # 텍스트
+                    cv2.putText(frame, text, (text_x, text_y),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                
+                # 중심점 표시
+                cv2.circle(frame, (frame_x, frame_y), 3, (255, 255, 255), -1)
+
+            
             # 마우스 이동 목표 업데이트(스레드가 이동 수행)
             if mouse_control_enabled:
                 with mouse_lock:

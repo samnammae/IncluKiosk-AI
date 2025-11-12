@@ -35,3 +35,22 @@ SCREEN_POSITION = os.path.join(
 )
 
 CAMERA_INDEX = 0
+
+# =========================
+# MediaPipe 모델 설정
+# =========================
+
+# === Face Detection 설정 ===
+FACE_DETECTION_MODEL = 0  # 0: 2m 이내 (빠름), 1: 5m 이내 (느림)
+FACE_DETECTION_CONFIDENCE = 0.5  # 얼굴 감지 신뢰도 임계값 (0.0 ~ 1.0)
+
+# === FaceMesh 설정 ===
+FACEMESH_MAX_FACES = 1  # 최대 감지 얼굴 수
+FACEMESH_MIN_DETECTION_CONFIDENCE = 0.5  # 얼굴 감지 신뢰도 임계값
+FACEMESH_MIN_TRACKING_CONFIDENCE = 0.5   # 얼굴 추적 신뢰도 임계값
+
+# === Hands 설정 ===
+HANDS_MODEL_COMPLEXITY = 0  # 0: Lite (빠름), 1: Full (정확함)
+HANDS_MAX_NUM = 1  # 최대 감지 손 개수
+HANDS_MIN_DETECTION_CONFIDENCE = 0.7  # 손 감지 신뢰도 임계값
+HANDS_MIN_TRACKING_CONFIDENCE = 0.5   # 손 추적 신뢰도 임계값
