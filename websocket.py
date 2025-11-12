@@ -15,6 +15,9 @@ import atexit
 import time
 import psutil
 
+# 미리 추출된 오디오 사용 여부
+USE_PREGENERATED_GUIDE = os.environ.get("USE_PREGENERATED_GUIDE", "true").lower() == "true"
+
 # 전역 변수에 추가
 height_set_processing = False
 height_last_request_time = 0
@@ -214,7 +217,11 @@ async def start_height_worker():
     
     loop = asyncio.get_running_loop()
     try:
-        await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+        # await loop.run_in_executor(None, tts_stt.play_height_guide_message)
+        await loop.run_in_executor(
+            None, 
+            partial(tts_stt.play_height_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+        )
     except Exception as e:
         print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
     
@@ -225,7 +232,7 @@ async def start_height_worker():
         ["sudo", "-E", PYTHON, "-m", "set_height.worker"],
         stdout=log_file,
         stderr=subprocess.STDOUT,
-        cwd=str(BASE_DIR)  # ✅ 작업 디렉토리 설정
+        cwd=str(BASE_DIR)
     )
     print(f"🔵[Hub] [Height] 프로세스 PID: {height_proc.pid}")
     print(f"🔵[Hub] [Height] 로그 파일: /tmp/height_worker.log")
@@ -361,7 +368,11 @@ async def handle_chat_order_on(websocket=None):
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
     try:
-        await loop.run_in_executor(None, tts_stt.play_chat_guide_message)
+        # await loop.run_in_executor(None, tts_stt.play_chat_guide_message)
+        await loop.run_in_executor(
+            None,
+            partial(tts_stt.play_chat_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+        )
         print("🔵[Hub] [TTS] 안내 종료 → TTS_OFF 전송")
         await send_to_front({"type": "TTS_OFF"})
     except Exception as e:
@@ -463,7 +474,11 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
+            # await loop.run_in_executor(None, tts_stt.play_cancel_guide_message)
+            await loop.run_in_executor(
+                None,
+                partial(tts_stt.play_cancel_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+            )
         except Exception as e:
             print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
         
@@ -481,7 +496,11 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         try:
             await loop.run_in_executor(
                 None, 
-                partial(tts_stt.play_error_guide_message, lang=language_code)
+                partial(
+                    tts_stt.play_error_guide_message, 
+                    lang=language_code,
+                    use_pregenerated=USE_PREGENERATED_GUIDE
+                )
             )
         except Exception as e:
             print(f"🔵[Hub] [TTS] 오류 안내 실패: {e}", file=sys.stderr)
@@ -539,14 +558,6 @@ async def handle_frontend(websocket):
                     continue
                 
                 height_last_request_time = now
-                
-                # 🆕 모든 워커 안전하게 정지
-                # # await stop_all_workers_safely()
-                # loop = asyncio.get_running_loop()
-                # try:
-                #     await loop.run_in_executor(None, tts_stt.play_height_guide_message)
-                # except Exception as e:
-                #     print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 await start_height_worker()
 
             elif msg_type == "HEIGHT_SET_CANCEL":
@@ -579,11 +590,15 @@ async def handle_frontend(websocket):
                     print("🔵[Hub] [DEBUG] 🔄 eye_running() == False → start_eye() 호출 예정")
                     loop = asyncio.get_running_loop()
                     try:
-                        await loop.run_in_executor(None, tts_stt.play_calib_guide_message)
+                        # await loop.run_in_executor(None, tts_stt.play_calib_guide_message)
+                        await loop.run_in_executor(
+                            None,
+                            partial(tts_stt.play_calib_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+                        )
                     except Exception as e:
                         print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                     start_eye()
-                    eye_ready_flag = False              # ✅ 새 프로세스이므로 플래그 리셋
+                    eye_ready_flag = False              
                     need_wait_ready = True
                 else:
                     # 이미 실행 중인데 READY를 보낸 적이 없다면 대기
@@ -617,7 +632,11 @@ async def handle_frontend(websocket):
                 mode_select_processing = True
                 loop = asyncio.get_running_loop()
                 try:
-                    await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
+                    # await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
+                    await loop.run_in_executor(
+                        None,
+                        partial(tts_stt.play_mode_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+                    )
                 except Exception as e:
                     print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 
