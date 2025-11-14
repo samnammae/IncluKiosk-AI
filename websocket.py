@@ -655,8 +655,11 @@ async def handle_frontend(websocket):
                 
                 mode_select_processing = False
                 chat_order_processing = True
-                # 대화 모드: eye_tracking_worker 종료
-                await handle_chat_order_on(websocket)
+                
+                # 워커는 유지하되 마우스 제어만 OFF
+                if is_running(eye_proc):
+                    await send_to_internal_worker({"type": "MOUSE_OFF"})
+                    print("🔵[Hub] [CHAT_ORDER] 마우스 제어 OFF (워커 유지)")
 
             elif msg_type == "NORMAL_ORDER_ON":
                 if normal_order_processing == True:
@@ -665,8 +668,11 @@ async def handle_frontend(websocket):
                 
                 mode_select_processing = False                
                 normal_order_processing = True
-                # 일반 모드: eye_tracking_worker 종료
-                await stop_all_workers_safely()
+                
+                # 워커는 유지하되 마우스 제어만 OFF
+                if is_running(eye_proc):
+                    await send_to_internal_worker({"type": "MOUSE_OFF"})
+                    print("🔵[Hub] [NORMAL_ORDER] 마우스 제어 OFF (워커 유지)")
 
             elif msg_type == "EYE_ORDER_ON":
                 if eye_order_processing == True:

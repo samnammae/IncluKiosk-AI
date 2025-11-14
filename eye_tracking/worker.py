@@ -413,6 +413,10 @@ while cap.isOpened():
             elif msg_type == "MOUSE_ON":
                 print("🟠 [Eye Worker] got MOUSE_ON")
                 mouse_only_requested = True
+            elif msg_type == "MOUSE_OFF":
+                print("🟠 [Eye Worker] got MOUSE_OFF")
+                mouse_control_enabled = False
+                click_controller.set_enabled(False)
             elif msg_type == "EYE_ORDER_ON":
                 print("🟠 [Eye Worker] got EYE_ORDER_ON")
                 mouse_click_requested = True
