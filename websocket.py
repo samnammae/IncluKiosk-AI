@@ -668,6 +668,8 @@ async def handle_frontend(websocket):
                 if is_running(eye_proc):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
                     print("🔵[Hub] [CHAT_ORDER] 마우스 제어 OFF (워커 유지)")
+                    
+                await handle_chat_order_on(websocket)
 
             elif msg_type == "NORMAL_ORDER_ON":
                 if normal_order_processing == True:
