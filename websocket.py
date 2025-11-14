@@ -624,6 +624,11 @@ async def handle_frontend(websocket):
                 
 
             elif msg_type == "MODE_SELECT_ON":
+                # 뒤로가기 대비 모든 주문 상태를 확실히 초기화
+                chat_order_processing = False
+                normal_order_processing = False
+                eye_order_processing = False
+                
                 print(f"🔵[Hub] in MODE_SELECT_ON, mode_select_processing is {mode_select_processing}")
                 if mode_select_processing:
                     print("🔵[Hub] [MODE_SELECT] ⚠ 이미 진행 중 - 무시")
@@ -632,7 +637,6 @@ async def handle_frontend(websocket):
                 mode_select_processing = True
                 loop = asyncio.get_running_loop()
                 try:
-                    # await loop.run_in_executor(None, tts_stt.play_mode_guide_message)
                     await loop.run_in_executor(
                         None,
                         partial(tts_stt.play_mode_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
@@ -704,6 +708,8 @@ async def handle_frontend(websocket):
                 eye_calib_processing = False
                 mode_select_processing = False
                 chat_order_processing = False
+                normal_order_processing = False
+                eye_order_processing = False
                 
                 # 1. 내부 워커들에게 정지 신호 먼저 전송
                 await send_to_internal_worker({"type": "STOP_ALL"})
