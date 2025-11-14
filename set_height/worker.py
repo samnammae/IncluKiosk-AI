@@ -342,8 +342,9 @@ async def ws_client():
                         
                         # 결과에 따라 서버로 통지
                         if should_stop:
-                            await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
-                            print("[Height Worker] CANCELLED 전송")
+                            # ALL_RESET 등으로 강제 종료된 경우 → 허브가 이미 알고 있으니 별도 통지 X
+                            print("[Height Worker] 외부 명령으로 중단됨")
+                            break
                         elif result_status == "limit_reached_no_face":
                             await ws.send(json.dumps({"type": "HEIGHT_SET_ERR"}))
                             print("[Height Worker] ERR 전송 (한계 도달 + 얼굴 없음)")
