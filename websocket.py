@@ -24,6 +24,7 @@ height_last_request_time = 0
 HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
 
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
+current_tts_task = None # tts 태스크 관리용 플래그
 
 # ============ 가상환경 Python 경로 명시 ============
 VENV_PYTHON = "/home/pi/IncluKiosk/IncluKiosk_venv/bin/python"
@@ -381,30 +382,62 @@ async def handle_chat_order_on(websocket=None):
 
 # ====== TTS/STT 핸들러 ======
 async def handle_tts_on(websocket, data):
-    """TTS_ON 메시지 처리"""
+    """TTS_ON 메시지 처리 (새 요청이 오면 이전 TTS를 끊고 바로 재생)"""
+    global current_tts_task
+
     text = data.get("message") or data.get("text") or ""
     if not str(text).strip():
         await send_json(websocket, {"type": "TTS_ERROR", "message": "Missing TTS text"})
         return
-    
+
     lang = data.get("lang", "ko-KR")
     voice = data.get("voice", None)
     rate = float(data.get("speakingRate", 1.0))
     pitch = float(data.get("pitch", 0.0))
     enc = data.get("audioEncoding", "LINEAR16")
-    
+
     loop = asyncio.get_running_loop()
+
+    # 1) 이전 TTS 오디오 재생 중이면 끊기
     try:
-        print(f"🔵[Hub] [TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
-        await loop.run_in_executor(
-            None,
-            partial(tts_stt.tts_play, text, lang, voice, rate, pitch, None, enc)
-        )
-        print("🔵[Hub] [TTS] 응답 종료 → TTS_OFF 전송")
-        await send_json(websocket, {"type": "TTS_OFF"})
+        tts_stt.stop_audio_playback()
+        print("🔵[Hub] [TTS] 이전 재생 중단 요청")
     except Exception as e:
-        print(f"🔵[Hub] [TTS] 오류: {e}", file=sys.stderr)
-        await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
+        print(f"🔵[Hub] [TTS] stop_audio_playback 중 예외: {e}", file=sys.stderr)
+
+    # 2) 이전에 돌고 있던 TTS 태스크가 있다면 취소
+    if current_tts_task is not None and not current_tts_task.done():
+        print("🔵[Hub] [TTS] 이전 TTS 태스크 취소")
+        current_tts_task.cancel()
+        try:
+            await current_tts_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"🔵[Hub] [TTS] 이전 태스크 종료 중 예외: {e}", file=sys.stderr)
+
+    # 3) 새 TTS를 백그라운드 태스크로 실행
+    async def _run_tts_once():
+        try:
+            print(f"🔵[Hub] [TTS] 응답 시작: \"{text[:40]}...\" ({enc})")
+            await loop.run_in_executor(
+                None,
+                partial(tts_stt.tts_play, text, lang, voice, rate, pitch, None, enc)
+            )
+            print("🔵[Hub] [TTS] 응답 종료 → TTS_OFF 전송")
+            await send_json(websocket, {"type": "TTS_OFF"})
+        except asyncio.CancelledError:
+            # 태스크가 취소된 경우(새 TTS가 들어온 경우) 조용히 무시
+            print("🔵[Hub] [TTS] TTS 태스크가 취소됨")
+        except Exception as e:
+            print(f"🔵[Hub] [TTS] 오류: {e}", file=sys.stderr)
+            try:
+                await send_json(websocket, {"type": "TTS_ERROR", "message": str(e)})
+            except Exception:
+                pass
+
+    current_tts_task = asyncio.create_task(_run_tts_once())
+    # ❗ 여기서 더 이상 기다리지 않고 바로 리턴 → 새 TTS_ON을 바로 받을 수 있음
 
 
 async def handle_stt_on(websocket, data, loop):
