@@ -35,6 +35,8 @@ mouse_only_requested = False
 mouse_click_requested = False
 stop_requested = False
 calib_just_completed = False
+calib_start_time = None
+CALIB_TIMEOUT = 8.0  # 캘리브레이션 타임아웃
 
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
@@ -410,6 +412,7 @@ while cap.isOpened():
             if msg_type == "EYE_CALIB_ON":
                 print("🟠 [Eye Worker] got EYE_CALIB_ON")
                 calib_requested = True
+                calib_start_time = time.time()  # 캘리브레이션 시작 시간 기록
             elif msg_type == "MOUSE_ON":
                 print("🟠 [Eye Worker] got MOUSE_ON")
                 mouse_only_requested = True
@@ -631,65 +634,98 @@ while cap.isOpened():
         calib_requested = False
         calib_just_completed = False
     
+    # ============ 캘리브레이션 타임아웃 체크 ============
+    if calib_requested and calib_start_time is not None:
+        if time.time() - calib_start_time > CALIB_TIMEOUT:
+            print("🟠 [Eye Worker] ❌ 캘리브레이션 타임아웃 (10초 초과)")
+            send_queue.put({"type": "EYE_CALIB_ERR", "message": "얼굴 감지 실패 - 10초 초과"})
+            calib_requested = False
+            calib_start_time = None
+    
     # ============ EYE_CALIB_ON 처리 (기존 'c' 키 로직) ============
     if calib_requested and not (left_sphere_locked and right_sphere_locked):
-        calib_requested = False
-        
-        # 1) 현 프레임의 코 영역 스케일 측정
-        current_nose_scale = utils.compute_scale(nose_points_3d)
-        
-        # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
-        left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
-        camera_dir_world = np.array([0, 0, 1])                      # 카메라 z+ 방향(프레임 전방)
-        camera_dir_local = R_final.T @ camera_dir_world             # 머리 로컬로 변환
-        left_sphere_local_offset += base_radius * camera_dir_local
-        left_calibration_nose_scale = current_nose_scale
-        left_sphere_locked = True # Lock LEFT eye
-
-        # 3) (우안) 동일 로직
-        right_sphere_local_offset = R_final.T @ (iris_3d_right - head_center)
-        right_sphere_local_offset += base_radius * camera_dir_local  # use same camera_dir_local
-        right_calibration_nose_scale = current_nose_scale
-        right_sphere_locked = True # Lock RIGHT eye
-
-        # 4) 캘리브레이션 시점의 월드 좌표 구체 중심(스케일 1 가정)
-        # === Create 3D monitor plane at calibration ===
-        # Compute instantaneous sphere positions at calibration distance (scale=1)
-        sphere_world_l_calib = head_center + R_final @ left_sphere_local_offset
-        sphere_world_r_calib = head_center + R_final @ right_sphere_local_offset
-
-        # 5) 양안 시선 평균으로 정면 힌트(forward_hint) 계산
-        # Estimate a forward gaze direction from the two eyes
-        left_dir  = iris_3d_left  - sphere_world_l_calib
-        right_dir = iris_3d_right - sphere_world_r_calib
-        # Normalize (guard zero)
-        if np.linalg.norm(left_dir)  > 1e-9: left_dir  /= np.linalg.norm(left_dir)
-        if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
-        forward_hint = (left_dir + right_dir) * 0.5
-        if np.linalg.norm(forward_hint) > 1e-9:
-            forward_hint /= np.linalg.norm(forward_hint)
+        # 얼굴이 감지되지 않으면 캘리브레이션 불가
+        if not results.multi_face_landmarks:
+            # 얼굴이 없으면 다음 프레임 대기 (타임아웃까지)
+            pass
         else:
-            forward_hint = None  # fallback to head frame
+            try:
+                calib_requested = False
+                
+                # 1) 현 프레임의 코 영역 스케일 측정
+                current_nose_scale = utils.compute_scale(nose_points_3d)
+                
+                # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
+                left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
+                camera_dir_world = np.array([0, 0, 1])                      # 카메라 z+ 방향(프레임 전방)
+                camera_dir_local = R_final.T @ camera_dir_world             # 머리 로컬로 변환
+                left_sphere_local_offset += base_radius * camera_dir_local
+                left_calibration_nose_scale = current_nose_scale
+                left_sphere_locked = True # Lock LEFT eye
 
-        gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
-        gaze_dir = forward_hint  # already normalized
-        
-        # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
-        monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
-            head_center, R_final, face_landmarks, w, h,
-            forward_hint=forward_hint,
-            gaze_origin=gaze_origin,
-            gaze_dir=gaze_dir
-        )
+                # 3) (우안) 동일 로직
+                right_sphere_local_offset = R_final.T @ (iris_3d_right - head_center)
+                right_sphere_local_offset += base_radius * camera_dir_local  # use same camera_dir_local
+                right_calibration_nose_scale = current_nose_scale
+                right_sphere_locked = True # Lock RIGHT eye
 
-        # Freeze the debug world's orbit pivot at the calibrated monitor center
-        #global debug_world_frozen, orbit_pivot_frozen
-        debug_world_frozen = True
-        orbit_pivot_frozen = monitor_center_w.copy()
-        print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
-        print("🟠 [Eye Worker] 캘리브레이션 완료")
-        
-        calib_just_completed = True
+                # 4) 캘리브레이션 시점의 월드 좌표 구체 중심(스케일 1 가정)
+                # === Create 3D monitor plane at calibration ===
+                # Compute instantaneous sphere positions at calibration distance (scale=1)
+                sphere_world_l_calib = head_center + R_final @ left_sphere_local_offset
+                sphere_world_r_calib = head_center + R_final @ right_sphere_local_offset
+
+                # 5) 양안 시선 평균으로 정면 힌트(forward_hint) 계산
+                # Estimate a forward gaze direction from the two eyes
+                left_dir  = iris_3d_left  - sphere_world_l_calib
+                right_dir = iris_3d_right - sphere_world_r_calib
+                # Normalize (guard zero)
+                if np.linalg.norm(left_dir)  > 1e-9: left_dir  /= np.linalg.norm(left_dir)
+                if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
+                forward_hint = (left_dir + right_dir) * 0.5
+                if np.linalg.norm(forward_hint) > 1e-9:
+                    forward_hint /= np.linalg.norm(forward_hint)
+                else:
+                    forward_hint = None  # fallback to head frame
+
+                gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
+                gaze_dir = forward_hint  # already normalized
+                
+                # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
+                monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
+                    head_center, R_final, face_landmarks, w, h,
+                    forward_hint=forward_hint,
+                    gaze_origin=gaze_origin,
+                    gaze_dir=gaze_dir
+                )
+
+                # Freeze the debug world's orbit pivot at the calibrated monitor center
+                #global debug_world_frozen, orbit_pivot_frozen
+                debug_world_frozen = True
+                orbit_pivot_frozen = monitor_center_w.copy()
+                print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
+                print("🟠 [Eye Worker] 캘리브레이션 완료")
+                
+                calib_just_completed = True
+                calib_start_time = None  # 타임아웃 타이머 리셋
+                
+            except (NameError, IndexError, AttributeError, ValueError) as e:
+                # 얼굴/눈 감지 실패 또는 계산 오류
+                print(f"🟠 [Eye Worker] ❌ 캘리브레이션 실패: {e}")
+                send_queue.put({"type": "EYE_CALIB_ERR", "message": "얼굴 또는 눈 감지 실패"})
+                calib_requested = False
+                calib_start_time = None
+                # 잠금 상태 리셋
+                left_sphere_locked = False
+                right_sphere_locked = False
+            except Exception as e:
+                # 기타 예상치 못한 오류
+                print(f"🟠 [Eye Worker] ❌ 캘리브레이션 예외: {e}")
+                send_queue.put({"type": "EYE_CALIB_ERR", "message": "캘리브레이션 오류 발생"})
+                calib_requested = False
+                calib_start_time = None
+                left_sphere_locked = False
+                right_sphere_locked = False
 
     # # -------------------------
     # # 키보드 입력 처리(전역)

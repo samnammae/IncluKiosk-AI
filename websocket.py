@@ -655,7 +655,6 @@ async def handle_frontend(websocket):
                 
                 mode_select_processing = False
                 chat_order_processing = True
-                
                 # 워커는 유지하되 마우스 제어만 OFF
                 if is_running(eye_proc):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
@@ -663,12 +662,11 @@ async def handle_frontend(websocket):
 
             elif msg_type == "NORMAL_ORDER_ON":
                 if normal_order_processing == True:
-                    print("🔵[Hub] [CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
+                    print("🔵[Hub] [NORMAL_ORDER_ON] 이미 일반 주문 진행 중 - 무시")
                     continue
                 
                 mode_select_processing = False                
                 normal_order_processing = True
-                
                 # 워커는 유지하되 마우스 제어만 OFF
                 if is_running(eye_proc):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
@@ -746,15 +744,21 @@ async def handle_internal_worker(websocket):
             
             if msg_type == "EYE_READY":
                 print("🔵[Hub] eye worker READY")
-                eye_ready_flag = True                    # ✅ READY 플래그 ON
+                eye_ready_flag = True         
                 if eye_ready_event is not None:
                     eye_ready_event.set()
 
             elif msg_type == "EYE_CALIB_COMPLETE":
                 print("🔵[Hub] ✅ 캘리브레이션 완료 확인")
                 eye_calib_completed = True
-                eye_calib_processing = False             # ✅ 여기서만 진행중 플래그 해제
+                eye_calib_processing = False         
                 await send_to_front({"type": "EYE_CALIB_END"})
+
+            elif msg_type == "EYE_CALIB_ERR":
+                print(f"🔵[Hub] ❌ 캘리브레이션 실패: {data.get('message', '알 수 없는 오류')}")
+                eye_calib_completed = False
+                eye_calib_processing = False          
+                await send_to_front({"type": "EYE_CALIB_ERR"})
 
             # PIR 감지
             elif msg_type == "PIR_DETECTED":
