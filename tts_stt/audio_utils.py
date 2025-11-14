@@ -225,7 +225,7 @@ def record_until_silence(
         return wav_path
 
 
-def play_audio_file(path: str, *, block: bool = False) -> None:
+def play_audio_file(path: str, block: bool = False) -> None:
     """
     파일 확장자에 맞춰 재생.
     - .mp3: mpg123

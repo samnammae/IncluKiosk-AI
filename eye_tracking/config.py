@@ -27,13 +27,6 @@ MONITOR_HEIGHT_CM = 34.42   # 라즈베리파이 세로
 # MONITOR_WIDTH_CM =35.5    # 가로
 # MONITOR_HEIGHT_CM = 22.5   # 세로
 
-# 모니터상 마우스 커서 위치 적는 텍스트 파일
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SCREEN_POSITION = os.path.join(
-    SCRIPT_DIR,
-    "screen_position.txt"
-)
-
 CAMERA_INDEX = 0
 
 FIST_MIN_HAND_SIZE = 50 # 최소 손 감지 크기
