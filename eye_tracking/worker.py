@@ -47,7 +47,9 @@ filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최�
 # ============ 주먹 감지 관련 변수 (추가) ============
 fist_detected = False
 fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
+fist_hold_time = 2.0      # 주먹 유지 시간 (2초)
 last_fist_toggle_time = 0
+fist_start_time = None    # 주먹을 처음 감지한 시간
 
 # ============ WebSocket 클라이언트 (별도 스레드) ============
 def websocket_thread_func():
@@ -442,23 +444,40 @@ while cap.isOpened():
             if is_fist(hand_landmarks, w, h):
                 current_fist_detected = True
                 break
-    # 주먹 감지 디바운스 처리
+    # 주먹 감지 유지 시간 체크
     current_time = time.time()
-    if current_fist_detected and not fist_detected:
-        if current_time - last_fist_toggle_time > fist_debounce_time:
-            fist_detected = True
-            last_fist_toggle_time = current_time
-            
-            send_queue.put({"type": "FIST_DETECTED"})
-            
-            # 주먹이 감지되면 클릭 컨트롤러 토글
-            # mouse_control_enabled = not mouse_control_enabled
-            # click_controller.set_enabled(mouse_control_enabled)
-            print(f"🟢 [Eye Worker] 주먹 감지! 마우스 제어: {'ON' if mouse_control_enabled else 'OFF'}")
-    elif not current_fist_detected and fist_detected:
-        if current_time - last_fist_toggle_time > fist_debounce_time:
-            fist_detected = False
-            last_fist_toggle_time = current_time
+    
+    if current_fist_detected:
+        # 주먹이 감지됨
+        if fist_start_time is None:
+            # 주먹을 처음 감지 시작
+            fist_start_time = current_time
+            print(f"🟢 [Eye Worker] 주먹 감지 시작... (2초 유지 필요)")
+        else:
+            # 주먹을 계속 유지중
+            hold_duration = current_time - fist_start_time
+            if hold_duration >= fist_hold_time and not fist_detected:
+                # 2초 이상 유지 → 주먹 인식 완료
+                if current_time - last_fist_toggle_time > fist_debounce_time:
+                    fist_detected = True
+                    last_fist_toggle_time = current_time
+                    
+                    send_queue.put({"type": "FIST_DETECTED"})
+                    print(f"🟢 [Eye Worker] ✅ 주먹 인식 완료! ({hold_duration:.1f}초 유지)")
+    else:
+        # 주먹이 감지되지 않음
+        if fist_start_time is not None:
+            # 주먹을 풀었음
+            hold_duration = current_time - fist_start_time
+            if hold_duration < fist_hold_time:
+                print(f"🟡 [Eye Worker] 주먹 감지 취소 ({hold_duration:.1f}초 < {fist_hold_time}초)")
+            fist_start_time = None
+        
+        # fist_detected 플래그 리셋
+        if fist_detected:
+            if current_time - last_fist_toggle_time > fist_debounce_time:
+                fist_detected = False
+                last_fist_toggle_time = current_time
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0].landmark
 

@@ -131,4 +131,4 @@ def is_fist(hand_landmarks, w, h):
     curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h)) # 약지
     curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h)) # 소지
     curled += int(is_thumb_curled(hand_landmarks, w, h))              # 엄지
-    return curled >= 4
+    return curled >= 5 # 5개가 다 구부러져야 주먹으로 감지
