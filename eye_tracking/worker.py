@@ -411,11 +411,12 @@ while cap.isOpened():
     
     current_fist_detected = False
     if hands_results.multi_hand_landmarks:
-        print(f"[Height Worker] 👋 Hand detected (count={len(hands_results.multi_hand_landmarks)})")
+        print(f"[HAND DETECTION] Hand detected (count={len(hands_results.multi_hand_landmarks)})")
         for hand_landmarks in hands_results.multi_hand_landmarks:
             if detection.is_fist(hand_landmarks, w, h, 
                       min_hand_size=fist_min_hand_size, 
                       thumb_threshold=fist_thumb_threshold):
+                print(f"[HAND DETECTION] 주먹 감지 됨")
                 current_fist_detected = True
                 break
     # 주먹 감지 유지 시간 체크
