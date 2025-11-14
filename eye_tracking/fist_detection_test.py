@@ -11,8 +11,9 @@ import time
 
 # ============ 설정 ============
 CAMERA_INDEX = 0
-MIN_HAND_SIZE = 100  # 최소 손 크기 (픽셀)
+MIN_HAND_SIZE = 50  # 최소 손 크기 (픽셀)
 FIST_HOLD_TIME = 2.0  # 주먹 유지 시간 (초)
+THUMB_THRESHOLD = 1.3  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 
 # ============ MediaPipe 초기화 ============
 mp_hands = mp.solutions.hands
@@ -39,17 +40,26 @@ def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
     return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
 
 
-def is_thumb_curled(hand_landmarks, w, h):
-    """엄지가 구부러졌는지 확인"""
+def is_thumb_curled(hand_landmarks, w, h, threshold_ratio=1.3):
+    """
+    엄지가 구부러졌는지 확인 (완화된 기준)
+    
+    Args:
+        threshold_ratio: 엄지 감지 완화 비율 (기본 1.3)
+    """
     wrist = _lm_xy(hand_landmarks, 0, w, h)
     tip = _lm_xy(hand_landmarks, 4, w, h)
     mcp = _lm_xy(hand_landmarks, 2, w, h)
-    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist)
+    # 엄지 끝이 MCP보다 조금(30%) 멀어도 구부러진 것으로 인정
+    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist) * threshold_ratio
 
 
-def is_fist(hand_landmarks, w, h, min_hand_size=100):
+def is_fist(hand_landmarks, w, h, min_hand_size=50, thumb_threshold=1.3):
     """
     주먹 제스처 감지
+    
+    Args:
+        thumb_threshold: 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
     
     Returns:
         tuple: (is_fist: bool, hand_size: float, curled_count: int)
@@ -68,7 +78,7 @@ def is_fist(hand_landmarks, w, h, min_hand_size=100):
     curled += int(is_finger_curled(hand_landmarks, 12, 10, 0, w, h)) # 중지
     curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h)) # 약지
     curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h)) # 소지
-    curled += int(is_thumb_curled(hand_landmarks, w, h))              # 엄지
+    curled += int(is_thumb_curled(hand_landmarks, w, h, threshold_ratio=thumb_threshold))  # 엄지 (완화)
     
     return (curled >= 5), hand_size, curled
 
@@ -130,6 +140,7 @@ def main():
     # 설정값 (동적 조정 가능)
     min_hand_size = MIN_HAND_SIZE
     hold_time = FIST_HOLD_TIME
+    thumb_threshold = THUMB_THRESHOLD
     
     while cap.isOpened():
         ret, frame = cap.read()
@@ -158,7 +169,9 @@ def main():
                 
                 # 주먹 감지
                 is_fist_result, hand_size, curled_count = is_fist(
-                    hand_landmarks, w, h, min_hand_size=min_hand_size
+                    hand_landmarks, w, h, 
+                    min_hand_size=min_hand_size,
+                    thumb_threshold=thumb_threshold
                 )
                 
                 hand_info.append({
