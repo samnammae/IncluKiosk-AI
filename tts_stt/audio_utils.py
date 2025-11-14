@@ -1,5 +1,6 @@
 """ 오디오 입출력 유틸리티 """
 import os
+import subprocess
 import sys
 import shutil
 import tempfile
@@ -21,6 +22,30 @@ from .config import (
     STT_INITIAL_SILENCE_TIMEOUT,
     PREFERRED_DEVICE_KEYWORDS
 )
+
+# 현재 재생 중인 플레이어 프로세스를 추적하기 위한 전역 변수
+_current_player_proc: Optional[subprocess.Popen] = None
+
+def stop_audio_playback() -> None:
+    """
+    현재 재생 중인 오디오 플레이어 프로세스를 종료한다.
+    (TTS 중간에 끊고 싶을 때 호출)
+    """
+    global _current_player_proc
+    try:
+        if _current_player_proc is not None and _current_player_proc.poll() is None:
+            print("[TTS] 재생 중단 요청 → 플레이어 종료 시도")
+            try:
+                _current_player_proc.terminate()
+                try:
+                    _current_player_proc.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[TTS] 플레이어 종료 중 예외: {e}", file=sys.stderr)
+    finally:
+        _current_player_proc = None
+
 
 
 def list_input_devices() -> List[dict]:
@@ -205,22 +230,47 @@ def play_audio_file(path: str) -> None:
     파일 확장자에 맞춰 재생.
     - .mp3: mpg123
     - .wav: aplay
+    재생은 subprocess로 실행하고, 전역 변수에 프로세스를 저장한 뒤
+    proc.wait()로 블로킹한다. (중간에 stop_audio_playback()으로 끊을 수 있음)
     """
+    global _current_player_proc
+
+    # 이전 재생이 남아 있다면 먼저 정리
+    stop_audio_playback()
+
     ext = os.path.splitext(path)[1].lower()
     if ext == ".mp3":
         player = shutil.which("mpg123")
         if player:
-            os.system(f"{player} -q '{path}'")
+            try:
+                _current_player_proc = subprocess.Popen(
+                    [player, "-q", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                _current_player_proc.wait()  # 재생 끝날 때까지 블로킹
+            finally:
+                _current_player_proc = None
         else:
             print("[TTS] 경고: mpg123가 없어 재생을 생략합니다.")
+
     elif ext == ".wav":
         player = shutil.which("aplay")
         if player:
-            os.system(f"{player} -q '{path}'")
+            try:
+                _current_player_proc = subprocess.Popen(
+                    [player, "-q", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                _current_player_proc.wait()
+            finally:
+                _current_player_proc = None
         else:
             print("[TTS] 경고: aplay가 없어 재생을 생략합니다.")
     else:
         print("[TTS] 알 수 없는 포맷, 재생 생략:", path)
+
 
 
 def play_if_exists(path: Optional[str], pause_after: float = 0.25) -> None:

@@ -630,6 +630,14 @@ async def handle_frontend(websocket):
                 eye_order_processing = False
                 
                 print(f"🔵[Hub] in MODE_SELECT_ON, mode_select_processing is {mode_select_processing}")
+                
+                # 대화 주문 등에서 넘어올 때, 재생 중이던 TTS가 있으면 끊기
+                try:
+                    tts_stt.stop_audio_playback()
+                    print("🔵[Hub] [MODE_SELECT] 기존 TTS 재생 중단 요청")
+                except Exception as e:
+                    print(f"🔵[Hub] [MODE_SELECT] TTS 중단 중 예외: {e}", file=sys.stderr)
+                
                 if mode_select_processing:
                     print("🔵[Hub] [MODE_SELECT] ⚠ 이미 진행 중 - 무시")
                     continue
@@ -701,14 +709,24 @@ async def handle_frontend(websocket):
 
             # === 대화주문 중 TTS/STT ===
             elif msg_type == "TTS_ON":
+                if not chat_order_processing:
+                    continue
                 await handle_tts_on(websocket, data)
 
             elif msg_type == "STT_ON":
+                if not chat_order_processing:
+                    continue
                 loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
+                # 어떤 화면이든 간에, 재생 중인 TTS가 있으면 먼저 중단
+                try:
+                    tts_stt.stop_audio_playback()
+                    print("🔵[Hub] [ALL_RESET] 기존 TTS 재생 중단 요청")
+                except Exception as e:
+                    print(f"🔵[Hub] [ALL_RESET] TTS 중단 중 예외: {e}", file=sys.stderr)
                 
                 # 모든 상태 플래그 리셋
                 eye_calib_completed = False

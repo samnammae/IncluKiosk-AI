@@ -21,6 +21,7 @@ from .config import (
 from .audio_utils import (
     find_input_device_index,
     list_input_devices,
+    stop_audio_playback, 
 )
 
 # TTS 함수
@@ -57,6 +58,7 @@ __all__ = [
     # 오디오
     "find_input_device_index",
     "list_input_devices",
+    "stop_audio_playback", 
     # TTS
     "tts_play",
     # STT
