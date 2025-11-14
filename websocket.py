@@ -635,6 +635,7 @@ async def handle_frontend(websocket):
                 chat_order_processing = False
                 normal_order_processing = False
                 eye_order_processing = False
+                stt_fail_count=0
                 
                 print(f"🔵[Hub] in MODE_SELECT_ON, mode_select_processing is {mode_select_processing}")
                 
