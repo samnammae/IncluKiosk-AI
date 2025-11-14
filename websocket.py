@@ -409,7 +409,7 @@ async def handle_tts_on(websocket, data):
 
 async def handle_stt_on(websocket, data, loop):
     """STT_ON 메시지 처리"""
-    global stt_fail_count
+    global stt_fail_count, chat_order_processing
 
     # 1. 파라미터 추출
     duration = int(data.get("duration", tts_stt.STT_MAX_DURATION))
@@ -445,6 +445,13 @@ async def handle_stt_on(websocket, data, loop):
     try:
         print(f"🔵[Hub] [STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
         transcript = await loop.run_in_executor(None, run_stt)
+        
+        # 🔹 STT가 끝나는 동안 화면이 나가서 대화주문이 종료된 경우 → 결과 무시
+        if not chat_order_processing:
+            print("🔵[Hub] [STT] chat_order_processing=False → STT 결과 무시 (화면 이탈 중)")
+            # 실패 카운트도 초기화해 두는 것이 깔끔
+            stt_fail_count = 0
+            return
         
         if transcript and transcript.strip():
             # 성공!
