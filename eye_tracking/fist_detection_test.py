@@ -9,9 +9,11 @@ import numpy as np
 import mediapipe as mp
 import time
 
+from . import config
+
 # ============ 설정 ============
 CAMERA_INDEX = 0
-MIN_HAND_SIZE = 50  # 최소 손 크기 (픽셀)
+MIN_HAND_SIZE = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀)
 FIST_HOLD_TIME = 2.0  # 주먹 유지 시간 (초)
 THUMB_THRESHOLD = 1.3  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 
@@ -54,7 +56,7 @@ def is_thumb_curled(hand_landmarks, w, h, threshold_ratio=1.3):
     return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist) * threshold_ratio
 
 
-def is_fist(hand_landmarks, w, h, min_hand_size=50, thumb_threshold=1.3):
+def is_fist(hand_landmarks, w, h, min_hand_size=config.FIST_MIN_HAND_SIZE, thumb_threshold=1.3):
     """
     주먹 제스처 감지
     
@@ -300,7 +302,7 @@ def main():
             min_hand_size += 10
             print(f"최소 손 크기: {min_hand_size}px")
         elif key == ord('-') or key == ord('_'):  # 손 크기 감소
-            min_hand_size = max(50, min_hand_size - 10)
+            min_hand_size = max(config.FIST_MIN_HAND_SIZE, min_hand_size - 10)
             print(f"최소 손 크기: {min_hand_size}px")
         elif key == ord(']'):  # 유지 시간 증가
             hold_time += 0.5

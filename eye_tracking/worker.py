@@ -14,6 +14,7 @@ import json
 
 from . import config
 from . import utils
+from . import detection
 from .click_controller import ClickController
 import threading
 import queue
@@ -48,7 +49,7 @@ filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최�
 fist_detected = False
 fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
 fist_hold_time = 2.0      # 주먹 유지 시간 (2초)
-fist_min_hand_size = 50  # 최소 손 크기 (픽셀, 손목~중지 끝 거리)
+fist_min_hand_size = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀, 손목~중지 끝 거리)
 fist_thumb_threshold = 1.3  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 last_fist_toggle_time = 0
 fist_start_time = None    # 주먹을 처음 감지한 시간
@@ -177,38 +178,6 @@ h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241, 
                 461, 125, 354, 218, 438, 195, 167, 393, 165, 391,
                 3, 248]
-
-# =========================
-# 주먹 감지 헬퍼 함수 (detection.py에서 가져옴)
-# =========================
-def _lm_xy(hand_landmarks, idx, w, h):
-    """랜드마크 XY 좌표 추출"""
-    lm = hand_landmarks.landmark[idx]
-    return np.array([lm.x * w, lm.y * h], dtype=float)
-
-def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
-    """손가락이 구부러졌는지 확인"""
-    tip = _lm_xy(hand_landmarks, tip_idx, w, h)
-    pip = _lm_xy(hand_landmarks, pip_idx, w, h)
-    wrist = _lm_xy(hand_landmarks, wrist_idx, w, h)
-    return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
-
-def is_thumb_curled(hand_landmarks, w, h):
-    """엄지가 구부러졌는지 확인"""
-    wrist = _lm_xy(hand_landmarks, 0, w, h)
-    tip = _lm_xy(hand_landmarks, 4, w, h)
-    mcp = _lm_xy(hand_landmarks, 2, w, h)
-    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist)
-
-def is_fist(hand_landmarks, w, h):
-    """주먹 제스처 감지"""
-    curled = 0
-    curled += int(is_finger_curled(hand_landmarks, 8, 6, 0, w, h))   # 검지
-    curled += int(is_finger_curled(hand_landmarks, 12, 10, 0, w, h)) # 중지
-    curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h)) # 약지
-    curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h)) # 소지
-    curled += int(is_thumb_curled(hand_landmarks, w, h))              # 엄지
-    return curled >= 4
 
 # =========================
 # 코 주변 소영역의 PCA 좌표계 계산 및 그리기
@@ -443,7 +412,7 @@ while cap.isOpened():
     current_fist_detected = False
     if hands_results.multi_hand_landmarks:
         for hand_landmarks in hands_results.multi_hand_landmarks:
-            if is_fist(hand_landmarks, w, h, 
+            if detection.is_fist(hand_landmarks, w, h, 
                       min_hand_size=fist_min_hand_size, 
                       thumb_threshold=fist_thumb_threshold):
                 current_fist_detected = True

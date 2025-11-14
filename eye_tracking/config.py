@@ -35,3 +35,6 @@ SCREEN_POSITION = os.path.join(
 )
 
 CAMERA_INDEX = 0
+
+# 최소 손 감지 크기
+FIST_MIN_HAND_SIZE = 50
