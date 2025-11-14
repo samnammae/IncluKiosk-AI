@@ -711,8 +711,13 @@ async def handle_frontend(websocket):
                     print("🔵[Hub] [CHAT_ORDER_ON] 이미 대화 주문 진행 중 - 무시")
                     continue
                 
+                # 이전 주문 상태/실패 횟수 초기화
                 mode_select_processing = False
                 chat_order_processing = True
+                normal_order_processing = False
+                eye_order_processing = False
+                stt_fail_count = 0
+                
                 # 워커는 유지하되 마우스 제어만 OFF
                 if is_running(eye_proc):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
