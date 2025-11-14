@@ -8,14 +8,13 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import time
-
-from . import config
+import config
 
 # ============ 설정 ============
 CAMERA_INDEX = 0
 MIN_HAND_SIZE = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀)
 FIST_HOLD_TIME = 2.0  # 주먹 유지 시간 (초)
-THUMB_THRESHOLD = 1.3  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
+THUMB_THRESHOLD = config.THUMB_THRESHOLD  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 
 # ============ MediaPipe 초기화 ============
 mp_hands = mp.solutions.hands

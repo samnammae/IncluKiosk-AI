@@ -38,3 +38,4 @@ CAMERA_INDEX = 0
 
 # 최소 손 감지 크기
 FIST_MIN_HAND_SIZE = 40
+THUMB_THRESHOLD = 1.5 # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
