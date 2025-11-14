@@ -362,8 +362,8 @@ async def stop_workers(eye=False, height=False, pir=False):
 
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):    
-    # 1. 모든 워커 정지
-    await stop_all_workers_safely()
+    # # 1. 모든 워커 정지
+    # await stop_all_workers_safely()
     
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
