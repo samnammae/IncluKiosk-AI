@@ -155,8 +155,8 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     model_complexity=0,
-    max_num_hands=2,
-    min_detection_confidence=0.5,
+    max_num_hands=1,
+    min_detection_confidence=0.7,
     min_tracking_confidence=0.5
 )
 
@@ -411,6 +411,7 @@ while cap.isOpened():
     
     current_fist_detected = False
     if hands_results.multi_hand_landmarks:
+        print(f"[Height Worker] 👋 Hand detected (count={len(hands_results.multi_hand_landmarks)})")
         for hand_landmarks in hands_results.multi_hand_landmarks:
             if detection.is_fist(hand_landmarks, w, h, 
                       min_hand_size=fist_min_hand_size, 

@@ -9,37 +9,37 @@ from types import SimpleNamespace
 from . import config
 
 
-# MediaPipe 초기화
-def init_mediapipe():
-    """MediaPipe 모델 초기화"""
-    # Face Detection
-    mp_face_detection = mp.solutions.face_detection
-    face_detection = mp_face_detection.FaceDetection(
-        model_selection=config.FACE_DETECTION_MODEL,
-        min_detection_confidence=config.FACE_DETECTION_CONFIDENCE
-    )
+# # MediaPipe 초기화 <- worker.py에서 초기화함
+# def init_mediapipe():
+#     """MediaPipe 모델 초기화"""
+#     # Face Detection
+#     mp_face_detection = mp.solutions.face_detection
+#     face_detection = mp_face_detection.FaceDetection(
+#         model_selection=config.FACE_DETECTION_MODEL,
+#         min_detection_confidence=config.FACE_DETECTION_CONFIDENCE
+#     )
     
-    # Face Mesh
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=config.FACEMESH_MAX_FACES,
-        refine_landmarks=True,
-        min_detection_confidence=config.FACEMESH_MIN_DETECTION_CONFIDENCE,
-        min_tracking_confidence=config.FACEMESH_MIN_TRACKING_CONFIDENCE
-    )
+#     # Face Mesh
+#     mp_face_mesh = mp.solutions.face_mesh
+#     face_mesh = mp_face_mesh.FaceMesh(
+#         static_image_mode=False,
+#         max_num_faces=config.FACEMESH_MAX_FACES,
+#         refine_landmarks=True,
+#         min_detection_confidence=config.FACEMESH_MIN_DETECTION_CONFIDENCE,
+#         min_tracking_confidence=config.FACEMESH_MIN_TRACKING_CONFIDENCE
+#     )
     
-    # Hands
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(
-        static_image_mode=False,
-        model_complexity=config.HANDS_MODEL_COMPLEXITY,
-        max_num_hands=config.HANDS_MAX_NUM,
-        min_detection_confidence=config.HANDS_MIN_DETECTION_CONFIDENCE,
-        min_tracking_confidence=config.HANDS_MIN_TRACKING_CONFIDENCE
-    )
+#     # Hands
+#     mp_hands = mp.solutions.hands
+#     hands = mp_hands.Hands(
+#         static_image_mode=False,
+#         model_complexity=config.HANDS_MODEL_COMPLEXITY,
+#         max_num_hands=config.HANDS_MAX_NUM,
+#         min_detection_confidence=config.HANDS_MIN_DETECTION_CONFIDENCE,
+#         min_tracking_confidence=config.HANDS_MIN_TRACKING_CONFIDENCE
+#     )
     
-    return face_detection, face_mesh, hands
+#     return face_detection, face_mesh, hands
 
 
 # =====================
