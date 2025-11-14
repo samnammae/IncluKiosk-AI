@@ -101,8 +101,8 @@ def draw_text_with_background(frame, text, position, font_scale=1.0,
 # ============ 메인 루프 ============
 def main():
     cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
     if not cap.isOpened():
         print("❌ 카메라를 열 수 없습니다.")
@@ -152,8 +152,8 @@ def main():
                 # 손 랜드마크 그리기
                 mp_drawing.draw_landmarks(
                     frame, hand_landmarks, mp_hands.HAND_CONNECTIONS,
-                    mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
-                    mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2)
+                    mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1, circle_radius=1),
+                    mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=1)
                 )
                 
                 # 주먹 감지
@@ -172,20 +172,20 @@ def main():
                 
                 # 손목 위치에 정보 표시
                 wrist = _lm_xy(hand_landmarks, 0, w, h)
-                info_x = int(wrist[0]) + 20
+                info_x = int(wrist[0]) + 15
                 info_y = int(wrist[1])
                 
                 # 손 크기
                 size_color = (0, 255, 0) if hand_size >= min_hand_size else (0, 0, 255)
                 cv2.putText(frame, f"Size: {hand_size:.0f}px", 
                            (info_x, info_y), cv2.FONT_HERSHEY_SIMPLEX,
-                           0.5, size_color, 2, cv2.LINE_AA)
+                           0.4, size_color, 1, cv2.LINE_AA)
                 
                 # 구부러진 손가락 수
                 finger_color = (0, 255, 0) if curled_count >= 5 else (255, 255, 0)
                 cv2.putText(frame, f"Fingers: {curled_count}/5", 
-                           (info_x, info_y + 25), cv2.FONT_HERSHEY_SIMPLEX,
-                           0.5, finger_color, 2, cv2.LINE_AA)
+                           (info_x, info_y + 20), cv2.FONT_HERSHEY_SIMPLEX,
+                           0.4, finger_color, 1, cv2.LINE_AA)
         
         # 주먹 유지 시간 체크
         current_time = time.time()
@@ -211,9 +211,9 @@ def main():
         draw_text_with_background(
             frame,
             f"Min Hand Size: {min_hand_size}px  |  Hold Time: {hold_time:.1f}s",
-            (10, 30),
-            font_scale=0.7,
-            thickness=2,
+            (10, 25),
+            font_scale=0.5,
+            thickness=1,
             bg_color=(50, 50, 50)
         )
         
@@ -223,12 +223,12 @@ def main():
             draw_text_with_background(
                 frame,
                 "FIST DETECTED!",
-                (w // 2 - 200, h // 2),
-                font_scale=2.0,
-                thickness=4,
+                (w // 2 - 120, h // 2),
+                font_scale=1.2,
+                thickness=3,
                 text_color=(0, 255, 0),
                 bg_color=(0, 100, 0),
-                padding=20
+                padding=15
             )
         elif current_fist_detected and fist_start_time is not None:
             # 주먹 유지 중
@@ -236,19 +236,19 @@ def main():
             draw_text_with_background(
                 frame,
                 f"Holding... {hold_duration:.1f}s / {hold_time:.1f}s ({progress:.0f}%)",
-                (w // 2 - 250, h // 2),
-                font_scale=1.2,
+                (w // 2 - 180, h // 2),
+                font_scale=0.8,
                 thickness=2,
                 text_color=(0, 255, 255),
                 bg_color=(100, 100, 0),
-                padding=15
+                padding=10
             )
             
             # 프로그레스 바
-            bar_width = 400
-            bar_height = 30
+            bar_width = 300
+            bar_height = 20
             bar_x = w // 2 - bar_width // 2
-            bar_y = h // 2 + 50
+            bar_y = h // 2 + 40
             
             # 배경
             cv2.rectangle(frame, (bar_x, bar_y), 
@@ -265,12 +265,12 @@ def main():
                          (255, 255, 255), 2)
         
         # 하단 도움말
-        help_text = "Press: Q=Quit  |  +/-=Hand Size  |  [/]=Hold Time"
+        help_text = "Q=Quit  |  +/-=Hand Size  |  [/]=Hold Time"
         draw_text_with_background(
             frame,
             help_text,
-            (10, h - 20),
-            font_scale=0.6,
+            (10, h - 15),
+            font_scale=0.5,
             thickness=1,
             bg_color=(50, 50, 50)
         )
