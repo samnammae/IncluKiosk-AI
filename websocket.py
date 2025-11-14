@@ -807,6 +807,14 @@ async def handle_internal_worker(websocket):
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
                 height_proc = None
                 height_set_processing = False
+                
+            
+            # 높이 조절에 에러가 발생
+            elif msg_type == "HEIGHT_SET_ERR":
+                print("🔵[Hub] ⚠️ 높이 조절 에러 발생")
+                await send_to_front({"type": "HEIGHT_SET_ERR"})
+                height_proc = None
+                height_set_processing = False
     
     except websockets.exceptions.ConnectionClosed:
         print("🔵[Hub] [Internal Worker] 연결 끊김")
