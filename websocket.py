@@ -644,12 +644,17 @@ async def handle_frontend(websocket):
                 except Exception as e:
                     print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
                 
-                if not is_running(eye_proc):
-                    print("🔵[Hub] [MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
-                    await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"})
+                if eye_calib_completed:
+                    if not is_running(eye_proc):
+                        print("🔵[Hub] [MODE_SELECT] ⚠ eye_tracking_worker가 실행중이지 않음")
+                        await send_to_front({"type": "ERROR", "message": "Please calibrate first (EYE_CALIB_ON)"}) # 추후에 고려해볼 것
+                    else:
+                        await send_to_internal_worker({"type": "MOUSE_ON"})
+                        print("🔵[Hub] [MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
                 else:
-                    await send_to_internal_worker({"type": "MOUSE_ON"})
-                    print("🔵[Hub] [MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
+                    if is_running(eye_proc):
+                        await send_to_internal_worker({"type": "MOUSE_OFF"})
+                    print("🔵[Hub] [MODE_SELECT] 아이트래킹 마우스 제어를 사용할 수 없음")
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
