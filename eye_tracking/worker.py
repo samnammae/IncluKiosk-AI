@@ -50,7 +50,7 @@ fist_detected = False
 fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
 fist_hold_time = 2.0      # 주먹 유지 시간 (2초)
 fist_min_hand_size = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀, 손목~중지 끝 거리)
-fist_thumb_threshold = 1.3  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
+fist_thumb_threshold = config.THUMB_THRESHOLD  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 last_fist_toggle_time = 0
 fist_start_time = None    # 주먹을 처음 감지한 시간
 
