@@ -132,7 +132,7 @@ def is_thumb_curled(hand_landmarks, w, h, threshold_ratio=1.3):
     return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist) * threshold_ratio
 
 
-def is_fist(hand_landmarks, w, h, min_hand_size=config.FIST_MIN_HAND_SIZE, thumb_threshold=1.3):
+def is_fist(hand_landmarks, w, h, min_hand_size=config.FIST_MIN_HAND_SIZE, thumb_threshold=config.THUMB_THRESHOLD):
     """
     주먹 제스처 감지
     
