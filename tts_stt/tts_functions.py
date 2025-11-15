@@ -72,5 +72,5 @@ def tts_play(
     with open(out_path, "wb") as f:
         f.write(response.audio_content)
 
-    play_audio_file(out_path, False)
+    play_audio_file(out_path, True)
     return out_path
