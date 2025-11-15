@@ -522,6 +522,12 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
     stt_fail_count += 1
     print(f"🔵[Hub] [STT] 실패 처리 ({stt_fail_count}/2)")
     
+    # 이미 주문이 종료된 상태라면 아무것도 하지 않음
+    if not chat_order_processing:
+        print("🔵[Hub] [STT] 실패 처리 요청이지만 chat_order_processing=False → 무시")
+        stt_fail_count=0
+        return
+    
     # 2회 실패 시 주문 취소
     if stt_fail_count >= 2:
         print("🔵[Hub] [ORDER] 무응답 2회 도달 → 주문 취소 플로우 실행")
@@ -747,7 +753,10 @@ async def handle_frontend(websocket):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
                     print("🔵[Hub] [CHAT_ORDER] 마우스 제어 OFF (워커 유지)")
                     
-                await handle_chat_order_on(websocket)
+                # await handle_chat_order_on(websocket)
+                # ✅ 대화 주문 가이드는 백그라운드 태스크로 실행
+                asyncio.create_task(handle_chat_order_on(websocket))
+
 
             elif msg_type == "NORMAL_ORDER_ON":
                 if normal_order_processing == True:
@@ -794,7 +803,8 @@ async def handle_frontend(websocket):
                 if not chat_order_processing:
                     print("🔵[Hub] [STT_ON] chat_order_processing=False → 무시")
                     continue
-                await handle_stt_on(websocket, data)
+                # await handle_stt_on(websocket, data)
+                asyncio.create_task(handle_stt_on(websocket, data, loop))
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
