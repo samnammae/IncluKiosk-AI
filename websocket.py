@@ -784,7 +784,9 @@ async def handle_frontend(websocket):
                 await handle_tts_on(websocket, data)
 
             elif msg_type == "STT_ON":
+                print(f"🔵[Hub] [Front→Hub] STT_ON 수신, chat_order_processing={chat_order_processing}")
                 if not chat_order_processing:
+                    print("🔵[Hub] [STT_ON] chat_order_processing=False → 무시")
                     continue
                 await handle_stt_on(websocket, data)
 
