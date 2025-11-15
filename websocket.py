@@ -762,7 +762,6 @@ async def handle_frontend(websocket):
             elif msg_type == "STT_ON":
                 if not chat_order_processing:
                     continue
-                # loop = asyncio.get_running_loop()
                 await handle_stt_on(websocket, data, loop)
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
