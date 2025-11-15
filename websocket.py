@@ -360,6 +360,21 @@ async def stop_workers(eye=False, height=False, pir=False):
         await stop_pir()
 
     print("🔵[Hub] [Safety] 선택적 정지 완료")
+    
+# 모드 선택 기본 안내 가이드 재생 태스크
+async def handle_mode_select_guide():
+    global mode_select_processing
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(
+            None,
+            partial(tts_stt.play_mode_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+        )
+    except Exception as e:
+        print(f"🔵[Hub] [MODE_SELECT] 가이드 재생 실패: {e}", file=sys.stderr)
+    finally:
+        # 가이드가 자연스럽게 끝났거나, stop_audio_playback()으로 끊겨도 여기로 옴
+        mode_select_processing = False
 
 # 대화 주문 핸들러
 async def handle_chat_order_on(websocket=None):    
@@ -514,7 +529,6 @@ async def handle_stt_on(websocket, data):
     except Exception as e:
         print(f"🔵[Hub] [STT] 예외 발생: {e}", file=sys.stderr)
         await send_json(websocket, {"type": "STT_ERROR", "message": str(e)})
-
 
 async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
     """STT 실패 처리 (통합)"""
@@ -706,14 +720,15 @@ async def handle_frontend(websocket):
                     continue
                 
                 mode_select_processing = True
-                loop = asyncio.get_running_loop()
-                try:
-                    await loop.run_in_executor(
-                        None,
-                        partial(tts_stt.play_mode_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
-                    )
-                except Exception as e:
-                    print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
+                # loop = asyncio.get_running_loop()
+                # try:
+                #     await loop.run_in_executor(
+                #         None,
+                #         partial(tts_stt.play_mode_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
+                #     )
+                # except Exception as e:
+                #     print(f"🔵[Hub] [TTS] 취소 안내 실패: {e}", file=sys.stderr)
+                asyncio.create_task(handle_mode_select_guide())
                 
                 if eye_calib_completed:
                     if not is_running(eye_proc):
