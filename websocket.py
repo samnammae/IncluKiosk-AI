@@ -22,6 +22,7 @@ USE_PREGENERATED_GUIDE = os.environ.get("USE_PREGENERATED_GUIDE", "true").lower(
 height_set_processing = False
 height_last_request_time = 0
 HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
+height_flow_active = False  # 높이조절 플로우 활성 여부
 
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
 current_tts_task = None # tts 태스크 관리용 플래그
@@ -199,7 +200,7 @@ def start_eye():
 # === 높이 조절 관련 ===
 async def start_height_worker():
     """높이 조절 워커 시작"""
-    global height_proc, height_set_processing
+    global height_proc, height_set_processing, height_flow_active
     
     # 이미 처리 중이면 무시
     if height_set_processing:
@@ -208,6 +209,10 @@ async def start_height_worker():
     
     if is_running(height_proc):
         print("🔵[Hub] [Height] 이미 실행 중")
+        return
+    
+    if not height_flow_active:
+        print("🔵[Hub] [Height] height_flow_active=False → 워커 시작 취소")
         return
     
     # 처리 시작 플래그 설정
@@ -242,7 +247,7 @@ async def start_height_worker():
     async def _watch():
         global height_set_processing, height_proc
         
-        # ⬇️ 로컬 변수에 저장 (경합 상태 방지!)
+        # 로컬 변수에 저장 (경합 상태 방지)
         proc_to_watch = height_proc
         
         if proc_to_watch:
@@ -260,7 +265,7 @@ async def start_height_worker():
             except Exception as e:
                 print(f"🔵[Hub] [Height] 로그 읽기 실패: {e}")
             
-            # ⬇️ 전역 변수가 아직 이 프로세스를 가리킬 때만 초기화
+            # 전역 변수가 아직 이 프로세스를 가리킬 때만 초기화
             if height_proc == proc_to_watch:
                 height_set_processing = False
                 height_proc = None
@@ -585,7 +590,7 @@ async def handle_stt_failure(websocket, loop, language_code="ko-KR"):
         await send_json(websocket, {"type": "ERR_END"})
 
 async def handle_frontend(websocket):
-    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing, chat_order_processing, normal_order_processing, eye_order_processing
+    global eye_proc, frontend_ws, stt_fail_count, eye_calib_processing, eye_calib_completed, mode_select_processing, chat_order_processing, normal_order_processing, eye_order_processing, height_flow_active
     print("🔵[Hub] 클라이언트 연결됨")
     
     # 프론트 연결 저장
@@ -634,9 +639,13 @@ async def handle_frontend(websocket):
                     continue
                 
                 height_last_request_time = now
-                await start_height_worker()
+                height_flow_active = True   # 🔹 이번 높이조절 플로우 활성화
+
+                # await start_height_worker()
+                asyncio.create_task(start_height_worker()) # 백그라운드 태스크로 실행
 
             elif msg_type == "HEIGHT_SET_CANCEL":
+                height_flow_active = False
                 await stop_height_worker()
                 await send_to_front({"type": "HEIGHT_SET_CANCEL"})
 
@@ -837,6 +846,7 @@ async def handle_frontend(websocket):
                 chat_order_processing = False
                 normal_order_processing = False
                 eye_order_processing = False
+                height_flow_active = False  
                 
                 # 1. 내부 워커들에게 정지 신호 먼저 전송
                 await send_to_internal_worker({"type": "STOP_ALL"})
