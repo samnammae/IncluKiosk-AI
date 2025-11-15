@@ -700,10 +700,13 @@ async def handle_frontend(websocket):
                     else:
                         await send_to_internal_worker({"type": "MOUSE_ON"})
                         print("🔵[Hub] [MODE_SELECT] 마우스 제어 ON 명령 전송 완료")
+                        await send_to_internal_worker({"type": "FIST_ON"})
+                        print("🔵[Hub] [MODE_SELECT] 주먹 감지 ON 명령 전송 완료")
                 else:
                     if is_running(eye_proc):
                         await send_to_internal_worker({"type": "MOUSE_OFF"})
-                    print("🔵[Hub] [MODE_SELECT] 아이트래킹 마우스 제어를 사용할 수 없음")
+                        await send_to_internal_worker({"type": "FIST_ON"})
+                    print("🔵[Hub] [MODE_SELECT] 주먹 감지 ON, 마우스 제어 OFF")
 
             # === 모드 선택 → 대화/일반/눈 ===
             elif msg_type == "CHAT_ORDER_ON":
@@ -717,6 +720,11 @@ async def handle_frontend(websocket):
                 normal_order_processing = False
                 eye_order_processing = False
                 stt_fail_count = 0
+                
+                # 🆕 주먹 감지 OFF
+                if is_running(eye_proc):
+                    await send_to_internal_worker({"type": "FIST_OFF"})
+                    print("🔵[Hub] [CHAT_ORDER] 주먹 감지 OFF")
                 
                 # 워커는 유지하되 마우스 제어만 OFF
                 if is_running(eye_proc):
@@ -732,6 +740,11 @@ async def handle_frontend(websocket):
                 
                 mode_select_processing = False                
                 normal_order_processing = True
+                
+                # 🆕 주먹 감지 OFF
+                if is_running(eye_proc):
+                    await send_to_internal_worker({"type": "FIST_OFF"})
+                    print("🔵[Hub] [NORMAL_ORDER] 주먹 감지 OFF")
                 # 워커는 유지하되 마우스 제어만 OFF
                 if is_running(eye_proc):
                     await send_to_internal_worker({"type": "MOUSE_OFF"})
@@ -751,6 +764,7 @@ async def handle_frontend(websocket):
                 else:
                     # 주먹 인식 OFF + 마우스 제어 ON (캘리브레이션 계속 유지)
                     await send_to_internal_worker({"type": "EYE_ORDER_ON"})
+                    await send_to_internal_worker({"type": "FIST_OFF"})
                     print("🔵[Hub] [EYE_ORDER] 명령 전송 완료 (캘리브레이션 유지)")
 
             # === 대화주문 중 TTS/STT ===

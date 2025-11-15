@@ -47,6 +47,7 @@ filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최�
 
 # ============ 주먹 감지 관련 변수 (추가) ============
 fist_detected = False
+fist_detection_enabled = False      # 🆕 주먹 감지 활성화 플래그
 fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
 fist_hold_time = config.FIST_HOLD_TIME      # 주먹 유지 시간 (2초)
 fist_min_hand_size = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀, 손목~중지 끝 거리)
@@ -393,6 +394,15 @@ while cap.isOpened():
                 print("🟠 [Eye Worker] got MOUSE_OFF")
                 mouse_control_enabled = False
                 click_controller.set_enabled(False)
+            elif msg_type == "FIST_ON":
+                print("🟠 [Eye Worker] got FIST_ON")
+                fist_detection_enabled = True
+            elif msg_type == "FIST_OFF":
+                print("🟠 [Eye Worker] got FIST_OFF")
+                fist_detection_enabled = False
+                # 주먹 상태 초기화
+                fist_detected = False
+                fist_start_time = None
             elif msg_type == "EYE_ORDER_ON":
                 print("🟠 [Eye Worker] got EYE_ORDER_ON")
                 mouse_click_requested = True
@@ -410,7 +420,14 @@ while cap.isOpened():
     hands_results = hands.process(frame_rgb)
     
     current_fist_detected = False
-    if hands_results.multi_hand_landmarks:
+    
+    # 🆕 주먹 감지가 비활성화되어 있으면 스킵
+    if not fist_detection_enabled:
+        # 주먹 감지 비활성화 상태 - 상태 초기화
+        if fist_start_time is not None or fist_detected:
+            fist_start_time = None
+            fist_detected = False
+    elif hands_results.multi_hand_landmarks:
         # print(f"[HAND DETECTION] Hand detected (count={len(hands_results.multi_hand_landmarks)})")
         for hand_landmarks in hands_results.multi_hand_landmarks:
             if detection.is_fist(hand_landmarks, w, h, 
