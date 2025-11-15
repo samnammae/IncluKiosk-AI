@@ -374,8 +374,8 @@ async def handle_chat_order_on(websocket=None):
             None,
             partial(tts_stt.play_chat_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
         )
-        print("🔵[Hub] [TTS] 안내 종료 → TTS_OFF 전송")
-        await send_to_front({"type": "TTS_OFF"})
+        await send_to_front({"type": "END_GUIDE"})
+        print("🔵[Hub] [TTS] 안내 종료 → END_GUIDE 전송")
     except Exception as e:
         print(f"🔵[Hub] [TTS] 안내 실패: {e}", file=sys.stderr)
         await send_to_front({"type": "TTS_ERROR", "message": f"Guide TTS failed: {e}"})
@@ -383,7 +383,12 @@ async def handle_chat_order_on(websocket=None):
 # ====== TTS/STT 핸들러 ======
 async def handle_tts_on(websocket, data):
     """TTS_ON 메시지 처리 (새 요청이 오면 이전 TTS를 끊고 바로 재생)"""
-    global current_tts_task
+    global current_tts_task, chat_order_processing, stt_fail_count
+    
+    if not chat_order_processing:
+        print("[TTS_ON] 대화 주문 중이 아님 -> ESCAPE")
+        stt_fail_count=0
+        return
 
     text = data.get("message") or data.get("text") or ""
     if not str(text).strip():
@@ -440,9 +445,14 @@ async def handle_tts_on(websocket, data):
     # ❗ 여기서 더 이상 기다리지 않고 바로 리턴 → 새 TTS_ON을 바로 받을 수 있음
 
 
-async def handle_stt_on(websocket, data, loop):
+async def handle_stt_on(websocket, data):
     """STT_ON 메시지 처리"""
     global stt_fail_count, chat_order_processing
+    
+    if not chat_order_processing:
+        print("🔵[Hub] [STT] chat_order_processing=False → STT 결과 무시 (화면 이탈 중)")
+        stt_fail_count = 0
+        return
 
     # 1. 파라미터 추출
     duration = int(data.get("duration", tts_stt.STT_MAX_DURATION))
@@ -477,12 +487,12 @@ async def handle_stt_on(websocket, data, loop):
     
     try:
         print(f"🔵[Hub] [STT] (auto) 녹음 시작: max {duration}s @ {sample_rate}Hz (device={device_idx})")
+        loop = asyncio.get_running_loop()
         transcript = await loop.run_in_executor(None, run_stt)
         
         # 🔹 STT가 끝나는 동안 화면이 나가서 대화주문이 종료된 경우 → 결과 무시
         if not chat_order_processing:
             print("🔵[Hub] [STT] chat_order_processing=False → STT 결과 무시 (화면 이탈 중)")
-            # 실패 카운트도 초기화해 두는 것이 깔끔
             stt_fail_count = 0
             return
         
@@ -776,7 +786,7 @@ async def handle_frontend(websocket):
             elif msg_type == "STT_ON":
                 if not chat_order_processing:
                     continue
-                await handle_stt_on(websocket, data, loop)
+                await handle_stt_on(websocket, data)
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
