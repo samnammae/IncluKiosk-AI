@@ -922,9 +922,22 @@ async def handle_internal_worker(websocket):
             
             # 높이 조절 완료
             elif msg_type == "HEIGHT_SET_END":
-                await send_to_front({"type": "HEIGHT_SET_END"})
+                # await send_to_front({"type": "HEIGHT_SET_END"})
+                # height_proc = None
+                # height_set_processing = False
+                
+                global height_flow_active
+
+                if not height_flow_active:
+                    # ✅ 이미 ALL_RESET/HEIGHT_SET_CANCEL 등으로 플로우가 취소된 상태
+                    print("🔵[Hub] [Height] HEIGHT_SET_END 수신 but height_flow_active=False → 프론트로 전달 생략")
+                else:
+                    await send_to_front({"type": "HEIGHT_SET_END"})
+
+                # 어떤 경우든 내부 상태는 정리
                 height_proc = None
                 height_set_processing = False
+                height_flow_active = False
             
             # 높이 조절 타임아웃
             elif msg_type == "HEIGHT_SET_TIMEOUT":
