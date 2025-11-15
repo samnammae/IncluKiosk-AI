@@ -804,7 +804,7 @@ async def handle_frontend(websocket):
                     print("🔵[Hub] [STT_ON] chat_order_processing=False → 무시")
                     continue
                 # await handle_stt_on(websocket, data)
-                asyncio.create_task(handle_stt_on(websocket, data, loop))
+                asyncio.create_task(handle_stt_on(websocket, data))
 
             # === ALL_RESET: 모든 기능 완전 정지 ===
             elif msg_type == "ALL_RESET":
