@@ -45,7 +45,7 @@ def _play_message(
     # 미리 추출된 파일 사용 모드이고 파일이 존재하면
     if use_pregenerated and os.path.isfile(audio_file):
         print(f"[TTS] 미리 추출된 파일 재생: {audio_file}")
-        play_audio_file(audio_file, False)
+        play_audio_file(audio_file, True)
         return audio_file
     else:
         # 파일이 없거나 실시간 TTS 모드면 Google TTS API 사용

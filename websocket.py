@@ -366,6 +366,8 @@ async def handle_chat_order_on(websocket=None):
     # # 1. 모든 워커 정지
     # await stop_all_workers_safely()
     
+    global chat_order_processing
+    
     # 2. 안내 TTS 재생
     loop = asyncio.get_running_loop()
     try:
@@ -374,6 +376,10 @@ async def handle_chat_order_on(websocket=None):
             None,
             partial(tts_stt.play_chat_guide_message, use_pregenerated=USE_PREGENERATED_GUIDE)
         )
+        if not chat_order_processing:
+            print("🔵[Hub] [CHAT_ORDER] 안내 도중 취소됨 → END_GUIDE 전송 생략")
+            return
+        
         await send_to_front({"type": "END_GUIDE"})
         print("🔵[Hub] [TTS] 안내 종료 → END_GUIDE 전송")
     except Exception as e:
