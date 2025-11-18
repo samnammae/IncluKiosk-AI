@@ -623,9 +623,9 @@ while cap.isOpened():
         print("🟠 [Eye Worker] 화면 중앙 보정 자동 실행...")
         
         # 현재 시선 방향 계산
-        left_gaze_dir = iris_3d_left - sphere_world_l  # ✅ 정확히 동일!
+        left_gaze_dir = iris_3d_left - sphere_world_l 
         left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-        right_gaze_dir = iris_3d_right - sphere_world_r  # ✅ 정확히 동일!
+        right_gaze_dir = iris_3d_right - sphere_world_r 
         right_gaze_dir /= np.linalg.norm(right_gaze_dir)
         current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
         current_combined_direction /= np.linalg.norm(current_combined_direction)
@@ -739,8 +739,9 @@ while cap.isOpened():
                 right_sphere_locked = False
 
     # # -------------------------
-    # # 키보드 입력 처리(전역)
+    # # 키보드 입력 처리 & 아이트래킹 과정 및 결과 시각화 (미사용으로 주석처리)
     # # -------------------------
+    
     # # F7: 마우스 제어 토글(디바운싱)
     # if keyboard.is_pressed('f7'):
     #     mouse_control_enabled = not mouse_control_enabled

@@ -21,7 +21,7 @@ USE_PREGENERATED_GUIDE = os.environ.get("USE_PREGENERATED_GUIDE", "true").lower(
 # 전역 변수에 추가
 height_set_processing = False
 height_last_request_time = 0
-HEIGHT_DEBOUNCE_SEC = 2.0     # ⬅️ 최소 2초 간격
+HEIGHT_DEBOUNCE_SEC = 2.0     # 높이조절 최소 2초 간격
 height_flow_active = False  # 높이조절 플로우 활성 여부
 
 stt_fail_count = 0  # TTS 무응답(실패) 횟수 카운터
