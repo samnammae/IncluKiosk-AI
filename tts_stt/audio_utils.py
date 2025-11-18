@@ -1,5 +1,6 @@
 """ 오디오 입출력 유틸리티 """
 import os
+import subprocess
 import sys
 import shutil
 import tempfile
@@ -21,6 +22,30 @@ from .config import (
     STT_INITIAL_SILENCE_TIMEOUT,
     PREFERRED_DEVICE_KEYWORDS
 )
+
+# 현재 재생 중인 플레이어 프로세스를 추적하기 위한 전역 변수
+_current_player_proc: Optional[subprocess.Popen] = None
+
+def stop_audio_playback() -> None:
+    """
+    현재 재생 중인 오디오 플레이어 프로세스를 종료한다.
+    (TTS 중간에 끊고 싶을 때 호출)
+    """
+    global _current_player_proc
+    try:
+        if _current_player_proc is not None and _current_player_proc.poll() is None:
+            print("[TTS] 재생 중단 요청 → 플레이어 종료 시도")
+            try:
+                _current_player_proc.terminate()
+                try:
+                    _current_player_proc.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[TTS] 플레이어 종료 중 예외: {e}", file=sys.stderr)
+    finally:
+        _current_player_proc = None
+
 
 
 def list_input_devices() -> List[dict]:
@@ -200,27 +225,74 @@ def record_until_silence(
         return wav_path
 
 
-def play_audio_file(path: str) -> None:
+def play_audio_file(path: str, block: bool = False) -> None:
     """
     파일 확장자에 맞춰 재생.
     - .mp3: mpg123
     - .wav: aplay
+
+    재생은 subprocess로 실행하고, 전역 변수에 프로세스를 저장한다.
+    block=True  : 재생이 끝날 때까지 이 함수 안에서 대기 (기존 동작과 동일)
+    block=False : 재생만 시작하고 바로 리턴 (중간에 stop_audio_playback()으로 끊을 수 있음)
     """
+    global _current_player_proc
+
+    # 이전 재생이 남아 있다면 먼저 정리
+    stop_audio_playback()
+
     ext = os.path.splitext(path)[1].lower()
+
     if ext == ".mp3":
         player = shutil.which("mpg123")
-        if player:
-            os.system(f"{player} -q '{path}'")
-        else:
+        if not player:
             print("[TTS] 경고: mpg123가 없어 재생을 생략합니다.")
+            return
+
+        _current_player_proc = subprocess.Popen(
+            [player, "-q", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
     elif ext == ".wav":
         player = shutil.which("aplay")
-        if player:
-            os.system(f"{player} -q '{path}'")
-        else:
+        if not player:
             print("[TTS] 경고: aplay가 없어 재생을 생략합니다.")
+            return
+
+        _current_player_proc = subprocess.Popen(
+            [player, "-q", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
     else:
         print("[TTS] 알 수 없는 포맷, 재생 생략:", path)
+        return
+
+    # --- 여기서 block 여부에 따라 대기/비대기 선택 ---
+    if block:
+        try:
+            _current_player_proc.wait()  # 재생 끝날 때까지 블로킹 (예전 동작)
+        finally:
+            _current_player_proc = None
+    else:
+        # 비동기 재생: 바로 리턴. 재생이 끝나면 _current_player_proc를 비워주기 위해
+        # 백그라운드에서 wait()만 해주는 쓰레드를 하나 띄운다.
+        import threading
+
+        def _wait_and_clear(proc):
+            try:
+                proc.wait()
+            finally:
+                # 아직 같은 프로세스를 가리키고 있으면만 None으로
+                global _current_player_proc
+                if _current_player_proc is proc:
+                    _current_player_proc = None
+
+        threading.Thread(target=_wait_and_clear, args=(_current_player_proc,), daemon=True).start()
+        print("[TTS] 비동기 재생 시작 (block=False)")
+
 
 
 def play_if_exists(path: Optional[str], pause_after: float = 0.25) -> None:
@@ -229,7 +301,7 @@ def play_if_exists(path: Optional[str], pause_after: float = 0.25) -> None:
         return
     if os.path.isfile(path):
         print(f"[SND] 프리사운드 재생: {path}")
-        play_audio_file(path)
+        play_audio_file(path, False)
         if pause_after > 0:
             time.sleep(pause_after)
     else:

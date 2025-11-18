@@ -14,6 +14,7 @@ import json
 
 from . import config
 from . import utils
+from . import detection
 from .click_controller import ClickController
 import threading
 import queue
@@ -35,6 +36,8 @@ mouse_only_requested = False
 mouse_click_requested = False
 stop_requested = False
 calib_just_completed = False
+calib_start_time = None
+CALIB_TIMEOUT = 8.0  # 캘리브레이션 타임아웃
 
 pyautogui.PAUSE = 0           # ← 기본 0.1초 대기 제거
 pyautogui.FAILSAFE = False    # ← 선택: 좌상단 구석에 가면 예외나는 기본 안전장치 비활성화
@@ -44,8 +47,13 @@ filter_length = 10                  # 시선 벡터 스무딩 버퍼 길이(최�
 
 # ============ 주먹 감지 관련 변수 (추가) ============
 fist_detected = False
+fist_detection_enabled = False      # 🆕 주먹 감지 활성화 플래그
 fist_debounce_time = 0.5  # 주먹 감지 디바운스 (0.5초)
+fist_hold_time = config.FIST_HOLD_TIME      # 주먹 유지 시간 (2초)
+fist_min_hand_size = config.FIST_MIN_HAND_SIZE  # 최소 손 크기 (픽셀, 손목~중지 끝 거리)
+fist_thumb_threshold = config.THUMB_THRESHOLD  # 엄지 감지 완화 비율 (1.0=엄격, 1.3=권장, 1.5=관대)
 last_fist_toggle_time = 0
+fist_start_time = None    # 주먹을 처음 감지한 시간
 
 # ============ WebSocket 클라이언트 (별도 스레드) ============
 def websocket_thread_func():
@@ -148,8 +156,8 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     model_complexity=0,
-    max_num_hands=2,
-    min_detection_confidence=0.5,
+    max_num_hands=1,
+    min_detection_confidence=0.7,
     min_tracking_confidence=0.5
 )
 
@@ -171,38 +179,6 @@ h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 nose_indices = [4, 45, 275, 220, 440, 1, 5, 51, 281, 44, 274, 241, 
                 461, 125, 354, 218, 438, 195, 167, 393, 165, 391,
                 3, 248]
-
-# =========================
-# 주먹 감지 헬퍼 함수 (detection.py에서 가져옴)
-# =========================
-def _lm_xy(hand_landmarks, idx, w, h):
-    """랜드마크 XY 좌표 추출"""
-    lm = hand_landmarks.landmark[idx]
-    return np.array([lm.x * w, lm.y * h], dtype=float)
-
-def is_finger_curled(hand_landmarks, tip_idx, pip_idx, wrist_idx, w, h):
-    """손가락이 구부러졌는지 확인"""
-    tip = _lm_xy(hand_landmarks, tip_idx, w, h)
-    pip = _lm_xy(hand_landmarks, pip_idx, w, h)
-    wrist = _lm_xy(hand_landmarks, wrist_idx, w, h)
-    return np.linalg.norm(tip - wrist) < np.linalg.norm(pip - wrist)
-
-def is_thumb_curled(hand_landmarks, w, h):
-    """엄지가 구부러졌는지 확인"""
-    wrist = _lm_xy(hand_landmarks, 0, w, h)
-    tip = _lm_xy(hand_landmarks, 4, w, h)
-    mcp = _lm_xy(hand_landmarks, 2, w, h)
-    return np.linalg.norm(tip - wrist) < np.linalg.norm(mcp - wrist)
-
-def is_fist(hand_landmarks, w, h):
-    """주먹 제스처 감지"""
-    curled = 0
-    curled += int(is_finger_curled(hand_landmarks, 8, 6, 0, w, h))   # 검지
-    curled += int(is_finger_curled(hand_landmarks, 12, 10, 0, w, h)) # 중지
-    curled += int(is_finger_curled(hand_landmarks, 16, 14, 0, w, h)) # 약지
-    curled += int(is_finger_curled(hand_landmarks, 20, 18, 0, w, h)) # 소지
-    curled += int(is_thumb_curled(hand_landmarks, w, h))              # 엄지
-    return curled >= 4
 
 # =========================
 # 코 주변 소영역의 PCA 좌표계 계산 및 그리기
@@ -410,9 +386,23 @@ while cap.isOpened():
             if msg_type == "EYE_CALIB_ON":
                 print("🟠 [Eye Worker] got EYE_CALIB_ON")
                 calib_requested = True
+                calib_start_time = time.time()  # 캘리브레이션 시작 시간 기록
             elif msg_type == "MOUSE_ON":
                 print("🟠 [Eye Worker] got MOUSE_ON")
                 mouse_only_requested = True
+            elif msg_type == "MOUSE_OFF":
+                print("🟠 [Eye Worker] got MOUSE_OFF")
+                mouse_control_enabled = False
+                click_controller.set_enabled(False)
+            elif msg_type == "FIST_ON":
+                print("🟠 [Eye Worker] got FIST_ON")
+                fist_detection_enabled = True
+            elif msg_type == "FIST_OFF":
+                print("🟠 [Eye Worker] got FIST_OFF")
+                fist_detection_enabled = False
+                # 주먹 상태 초기화
+                fist_detected = False
+                fist_start_time = None
             elif msg_type == "EYE_ORDER_ON":
                 print("🟠 [Eye Worker] got EYE_ORDER_ON")
                 mouse_click_requested = True
@@ -430,28 +420,56 @@ while cap.isOpened():
     hands_results = hands.process(frame_rgb)
     
     current_fist_detected = False
-    if hands_results.multi_hand_landmarks:
+    
+    # 🆕 주먹 감지가 비활성화되어 있으면 스킵
+    if not fist_detection_enabled:
+        # 주먹 감지 비활성화 상태 - 상태 초기화
+        if fist_start_time is not None or fist_detected:
+            fist_start_time = None
+            fist_detected = False
+    elif hands_results.multi_hand_landmarks:
+        # print(f"[HAND DETECTION] Hand detected (count={len(hands_results.multi_hand_landmarks)})")
         for hand_landmarks in hands_results.multi_hand_landmarks:
-            if is_fist(hand_landmarks, w, h):
+            if detection.is_fist(hand_landmarks, w, h, 
+                      min_hand_size=fist_min_hand_size, 
+                      thumb_threshold=fist_thumb_threshold):
+                # print(f"[HAND DETECTION] 주먹 감지 됨")
                 current_fist_detected = True
                 break
-    # 주먹 감지 디바운스 처리
+    # 주먹 감지 유지 시간 체크
     current_time = time.time()
-    if current_fist_detected and not fist_detected:
-        if current_time - last_fist_toggle_time > fist_debounce_time:
-            fist_detected = True
-            last_fist_toggle_time = current_time
-            
-            send_queue.put({"type": "FIST_DETECTED"})
-            
-            # 주먹이 감지되면 클릭 컨트롤러 토글
-            # mouse_control_enabled = not mouse_control_enabled
-            # click_controller.set_enabled(mouse_control_enabled)
-            print(f"🟢 [Eye Worker] 주먹 감지! 마우스 제어: {'ON' if mouse_control_enabled else 'OFF'}")
-    elif not current_fist_detected and fist_detected:
-        if current_time - last_fist_toggle_time > fist_debounce_time:
-            fist_detected = False
-            last_fist_toggle_time = current_time
+    
+    if current_fist_detected:
+        # 주먹이 감지됨
+        if fist_start_time is None:
+            # 주먹을 처음 감지 시작
+            fist_start_time = current_time
+            print(f"🟢 [Eye Worker] 주먹 감지 시작... (2초 유지 필요)")
+        else:
+            # 주먹을 계속 유지중
+            hold_duration = current_time - fist_start_time
+            if hold_duration >= fist_hold_time and not fist_detected:
+                # 2초 이상 유지 → 주먹 인식 완료
+                if current_time - last_fist_toggle_time > fist_debounce_time:
+                    fist_detected = True
+                    last_fist_toggle_time = current_time
+                    
+                    send_queue.put({"type": "FIST_DETECTED"})
+                    print(f"🟢 [Eye Worker] ✅ 주먹 인식 완료! ({hold_duration:.1f}초 유지)")
+    else:
+        # 주먹이 감지되지 않음
+        if fist_start_time is not None:
+            # 주먹을 풀었음
+            hold_duration = current_time - fist_start_time
+            if hold_duration < fist_hold_time:
+                print(f"🟡 [Eye Worker] 주먹 감지 취소 ({hold_duration:.1f}초 < {fist_hold_time}초)")
+            fist_start_time = None
+        
+        # fist_detected 플래그 리셋
+        if fist_detected:
+            if current_time - last_fist_toggle_time > fist_debounce_time:
+                fist_detected = False
+                last_fist_toggle_time = current_time
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0].landmark
 
@@ -605,9 +623,9 @@ while cap.isOpened():
         print("🟠 [Eye Worker] 화면 중앙 보정 자동 실행...")
         
         # 현재 시선 방향 계산
-        left_gaze_dir = iris_3d_left - sphere_world_l  # ✅ 정확히 동일!
+        left_gaze_dir = iris_3d_left - sphere_world_l 
         left_gaze_dir /= np.linalg.norm(left_gaze_dir)
-        right_gaze_dir = iris_3d_right - sphere_world_r  # ✅ 정확히 동일!
+        right_gaze_dir = iris_3d_right - sphere_world_r 
         right_gaze_dir /= np.linalg.norm(right_gaze_dir)
         current_combined_direction = (left_gaze_dir + right_gaze_dir) / 2
         current_combined_direction /= np.linalg.norm(current_combined_direction)
@@ -627,69 +645,103 @@ while cap.isOpened():
         calib_requested = False
         calib_just_completed = False
     
+    # ============ 캘리브레이션 타임아웃 체크 ============
+    if calib_requested and calib_start_time is not None:
+        if time.time() - calib_start_time > CALIB_TIMEOUT:
+            print("🟠 [Eye Worker] ❌ 캘리브레이션 타임아웃 (10초 초과)")
+            send_queue.put({"type": "EYE_CALIB_ERR", "message": "얼굴 감지 실패 - 10초 초과"})
+            calib_requested = False
+            calib_start_time = None
+    
     # ============ EYE_CALIB_ON 처리 (기존 'c' 키 로직) ============
     if calib_requested and not (left_sphere_locked and right_sphere_locked):
-        calib_requested = False
-        
-        # 1) 현 프레임의 코 영역 스케일 측정
-        current_nose_scale = utils.compute_scale(nose_points_3d)
-        
-        # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
-        left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
-        camera_dir_world = np.array([0, 0, 1])                      # 카메라 z+ 방향(프레임 전방)
-        camera_dir_local = R_final.T @ camera_dir_world             # 머리 로컬로 변환
-        left_sphere_local_offset += base_radius * camera_dir_local
-        left_calibration_nose_scale = current_nose_scale
-        left_sphere_locked = True # Lock LEFT eye
-
-        # 3) (우안) 동일 로직
-        right_sphere_local_offset = R_final.T @ (iris_3d_right - head_center)
-        right_sphere_local_offset += base_radius * camera_dir_local  # use same camera_dir_local
-        right_calibration_nose_scale = current_nose_scale
-        right_sphere_locked = True # Lock RIGHT eye
-
-        # 4) 캘리브레이션 시점의 월드 좌표 구체 중심(스케일 1 가정)
-        # === Create 3D monitor plane at calibration ===
-        # Compute instantaneous sphere positions at calibration distance (scale=1)
-        sphere_world_l_calib = head_center + R_final @ left_sphere_local_offset
-        sphere_world_r_calib = head_center + R_final @ right_sphere_local_offset
-
-        # 5) 양안 시선 평균으로 정면 힌트(forward_hint) 계산
-        # Estimate a forward gaze direction from the two eyes
-        left_dir  = iris_3d_left  - sphere_world_l_calib
-        right_dir = iris_3d_right - sphere_world_r_calib
-        # Normalize (guard zero)
-        if np.linalg.norm(left_dir)  > 1e-9: left_dir  /= np.linalg.norm(left_dir)
-        if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
-        forward_hint = (left_dir + right_dir) * 0.5
-        if np.linalg.norm(forward_hint) > 1e-9:
-            forward_hint /= np.linalg.norm(forward_hint)
+        # 얼굴이 감지되지 않으면 캘리브레이션 불가
+        if not results.multi_face_landmarks:
+            # 얼굴이 없으면 다음 프레임 대기 (타임아웃까지)
+            pass
         else:
-            forward_hint = None  # fallback to head frame
+            try:
+                calib_requested = False
+                
+                # 1) 현 프레임의 코 영역 스케일 측정
+                current_nose_scale = utils.compute_scale(nose_points_3d)
+                
+                # 2) (좌안) 홍채의 머리 로컬 오프셋을 계산하고 구체 중심을 앞(z+)으로 base_radius만큼 이동
+                left_sphere_local_offset = R_final.T @ (iris_3d_left - head_center)
+                camera_dir_world = np.array([0, 0, 1])                      # 카메라 z+ 방향(프레임 전방)
+                camera_dir_local = R_final.T @ camera_dir_world             # 머리 로컬로 변환
+                left_sphere_local_offset += base_radius * camera_dir_local
+                left_calibration_nose_scale = current_nose_scale
+                left_sphere_locked = True # Lock LEFT eye
 
-        gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
-        gaze_dir = forward_hint  # already normalized
-        
-        # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
-        monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
-            head_center, R_final, face_landmarks, w, h,
-            forward_hint=forward_hint,
-            gaze_origin=gaze_origin,
-            gaze_dir=gaze_dir
-        )
+                # 3) (우안) 동일 로직
+                right_sphere_local_offset = R_final.T @ (iris_3d_right - head_center)
+                right_sphere_local_offset += base_radius * camera_dir_local  # use same camera_dir_local
+                right_calibration_nose_scale = current_nose_scale
+                right_sphere_locked = True # Lock RIGHT eye
 
-        # Freeze the debug world's orbit pivot at the calibrated monitor center
-        #global debug_world_frozen, orbit_pivot_frozen
-        debug_world_frozen = True
-        orbit_pivot_frozen = monitor_center_w.copy()
-        print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
-        print("🟠 [Eye Worker] 캘리브레이션 완료")
-        
-        calib_just_completed = True
+                # 4) 캘리브레이션 시점의 월드 좌표 구체 중심(스케일 1 가정)
+                # === Create 3D monitor plane at calibration ===
+                # Compute instantaneous sphere positions at calibration distance (scale=1)
+                sphere_world_l_calib = head_center + R_final @ left_sphere_local_offset
+                sphere_world_r_calib = head_center + R_final @ right_sphere_local_offset
+
+                # 5) 양안 시선 평균으로 정면 힌트(forward_hint) 계산
+                # Estimate a forward gaze direction from the two eyes
+                left_dir  = iris_3d_left  - sphere_world_l_calib
+                right_dir = iris_3d_right - sphere_world_r_calib
+                # Normalize (guard zero)
+                if np.linalg.norm(left_dir)  > 1e-9: left_dir  /= np.linalg.norm(left_dir)
+                if np.linalg.norm(right_dir) > 1e-9: right_dir /= np.linalg.norm(right_dir)
+                forward_hint = (left_dir + right_dir) * 0.5
+                if np.linalg.norm(forward_hint) > 1e-9:
+                    forward_hint /= np.linalg.norm(forward_hint)
+                else:
+                    forward_hint = None  # fallback to head frame
+
+                gaze_origin = (sphere_world_l_calib + sphere_world_r_calib) / 2
+                gaze_dir = forward_hint  # already normalized
+                
+                # 6) 모니터 평면 생성 + 디버그 월드 고정(모니터 중심을 피벗으로)
+                monitor_corners, monitor_center_w, monitor_normal_w, units_per_cm = utils.create_monitor_plane(
+                    head_center, R_final, face_landmarks, w, h,
+                    forward_hint=forward_hint,
+                    gaze_origin=gaze_origin,
+                    gaze_dir=gaze_dir
+                )
+
+                # Freeze the debug world's orbit pivot at the calibrated monitor center
+                #global debug_world_frozen, orbit_pivot_frozen
+                debug_world_frozen = True
+                orbit_pivot_frozen = monitor_center_w.copy()
+                print(f"🟠 [Eye Worker] units_per_cm={units_per_cm:.3f}, center={monitor_center_w}, normal={monitor_normal_w}")        
+                print("🟠 [Eye Worker] 캘리브레이션 완료")
+                
+                calib_just_completed = True
+                calib_start_time = None  # 타임아웃 타이머 리셋
+                
+            except (NameError, IndexError, AttributeError, ValueError) as e:
+                # 얼굴/눈 감지 실패 또는 계산 오류
+                print(f"🟠 [Eye Worker] ❌ 캘리브레이션 실패: {e}")
+                send_queue.put({"type": "EYE_CALIB_ERR", "message": "얼굴 또는 눈 감지 실패"})
+                calib_requested = False
+                calib_start_time = None
+                # 잠금 상태 리셋
+                left_sphere_locked = False
+                right_sphere_locked = False
+            except Exception as e:
+                # 기타 예상치 못한 오류
+                print(f"🟠 [Eye Worker] ❌ 캘리브레이션 예외: {e}")
+                send_queue.put({"type": "EYE_CALIB_ERR", "message": "캘리브레이션 오류 발생"})
+                calib_requested = False
+                calib_start_time = None
+                left_sphere_locked = False
+                right_sphere_locked = False
 
     # # -------------------------
-    # # 키보드 입력 처리(전역)
+    # # 키보드 입력 처리 & 아이트래킹 과정 및 결과 시각화 (미사용으로 주석처리)
     # # -------------------------
+    
     # # F7: 마우스 제어 토글(디바운싱)
     # if keyboard.is_pressed('f7'):
     #     mouse_control_enabled = not mouse_control_enabled

@@ -110,6 +110,8 @@ def track_height():
     last_detection_time = time.time()
     last_print_t = 0
     last_state = None
+    
+    limit_reached_without_face = False # 높이 조절 실패 여부를 위한 플래그
 
     try:
         while not should_stop:
@@ -187,7 +189,8 @@ def track_height():
                     moveDown(config.WITHOUT_FACE)
                     
                     if exceed_min_height():
-                        print("🚫 최소 높이 도달 → 종료")
+                        print("🚫 최소 높이 도달 → 종료 (얼굴 없음)")
+                        limit_reached_without_face = True
                         break
                 else:
                     # 사람은 있음
@@ -200,7 +203,8 @@ def track_height():
                         moveUp(config.WITHOUT_FACE)
                         
                         if exceed_max_height():
-                            print("🚫 최대 높이 도달 → 종료")
+                            print("🚫 최대 높이 도달 → 종료 (얼굴 없음)")
+                            limit_reached_without_face = True
                             break
                     elif y1 >= 0.95:
                         # 사람이 화면 아래쪽에 있음
@@ -208,7 +212,8 @@ def track_height():
                         moveDown(config.WITHOUT_FACE)
                         
                         if exceed_min_height():
-                            print("🚫 최소 높이 도달 → 종료")
+                            print("🚫 최소 높이 도달 → 종료 (얼굴 없음)")
+                            limit_reached_without_face = True
                             break
                     else:
                         # 사람이 화면 중간에 있음
@@ -284,6 +289,8 @@ def track_height():
             traceback.print_exc()
         
         # 반환값 결정
+        if limit_reached_without_face:
+            return "limit_reached_no_face" 
         if exceed_max_height() or exceed_min_height():
             return "limit_reached"
         elif time.time() - last_detection_time > config.NO_DETECTION_TIMEOUT:
@@ -335,8 +342,12 @@ async def ws_client():
                         
                         # 결과에 따라 서버로 통지
                         if should_stop:
-                            await ws.send(json.dumps({"type": "HEIGHT_SET_CANCEL"}))
-                            print("[Height Worker] CANCELLED 전송")
+                            # ALL_RESET 등으로 강제 종료된 경우 → 허브가 이미 알고 있으니 별도 통지 X
+                            print("[Height Worker] 외부 명령으로 중단됨")
+                            break
+                        elif result_status == "limit_reached_no_face":
+                            await ws.send(json.dumps({"type": "HEIGHT_SET_ERR"}))
+                            print("[Height Worker] ERR 전송 (한계 도달 + 얼굴 없음)")
                         elif result_status == "limit_reached":
                             await ws.send(json.dumps({"type": "HEIGHT_SET_END"}))
                             print("[Height Worker] END 전송 (한계 도달)")
